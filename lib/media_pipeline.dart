@@ -98,9 +98,10 @@ class MergePlan {
     var ac = probes
         .map((p) => audio != null && p.audioSignature != audio.audioSignature)
         .toList();
+    // 只有真正需要改动的分集才标记为转码音频：完全没有音轨的分集由上方的 addSilence
+    // 补静音，不能被“少数派需要归一化”连带成重编码，否则会把原本可 copy 的音轨全部重压。
     final canonicalAac =
         audio?.audio['codec_name'] == 'aac' && ac.any((change) => change);
-    if (canonicalAac) ac = List.filled(probes.length, true);
     if (vc.any((v) => v) && !{'h264', 'hevc'}.contains(video.videoCodec)) {
       throw AppFailure('多数分集为 ${video.videoCodec}，当前不能将其他格式转换为此编码；原文件已保留。');
     }

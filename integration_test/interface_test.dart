@@ -107,10 +107,16 @@ void main() {
       await store.setThemeMode('light');
       await tester.pumpAndSettle();
       final menu = find.byKey(const ValueKey('download-queue-actions'));
-      final filters = find.byKey(const ValueKey('download-filters'));
+      // 筛选改成了对话框入口，这里只断言工具栏整体位于任务列表之上。
+      final filters = find.byTooltip('筛选下载合集');
+      final firstTask = find.byKey(const ValueKey('download-task-task-0'));
       expect(
         tester.getRect(menu).bottom,
-        lessThan(tester.getRect(filters).top),
+        lessThan(tester.getRect(firstTask).top),
+      );
+      expect(
+        tester.getRect(filters).bottom,
+        lessThan(tester.getRect(firstTask).top),
       );
       await capture('interface-light-downloads');
       await tester.tap(menu);
@@ -119,7 +125,11 @@ void main() {
       await tester.tap(find.text('全部暂停'));
       await tester.pumpAndSettle();
       expect(repository.jobs.where((job) => job.active), isEmpty);
-      await tester.tap(find.byKey(const ValueKey('download-filter-completed')));
+      await tester.tap(filters);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ChoiceChip, '已下载'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '应用'));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('download-task-task-0')), findsNothing);
       await capture('interface-completed-downloads');

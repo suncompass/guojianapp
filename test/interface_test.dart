@@ -33,7 +33,9 @@ void main() {
   testWidgets(
     'refresh rotates during a request and stops after success or failure',
     (tester) async {
-      viewport(tester, const Size(390, 844));
+      // 刷新按钮只在宽度 ≥400 时出现在标题栏（更窄时走“更多”菜单里的更新），
+      // 本用例验证的是旋转动画，不需要窄屏布局，所以用能显示该按钮的宽度。
+      viewport(tester, const Size(420, 844));
       final repository = InterfaceRepository();
       await tester.pumpWidget(
         DuanjuApp(repository: repository, store: await localStore()),
@@ -214,28 +216,35 @@ void main() {
         );
         await tester.pumpAndSettle();
         final menu = find.byKey(const ValueKey('download-queue-actions'));
-        final filters = find.byKey(const ValueKey('download-filters'));
+        // 筛选入口现在是一个按钮（在对话框里选任务状态/剧集状态），不再是常驻筛选条。
+        final filters = find.byTooltip('筛选下载合集');
         final local = find.byKey(const ValueKey('download-local-media'));
+        final firstTask = find.byKey(const ValueKey('download-task-task-0'));
         expect(
           tester.getCenter(menu).dy,
-          closeTo(tester.getCenter(find.text('下载任务')).dy, .01),
+          closeTo(tester.getCenter(find.text('下载合集')).dy, .01),
         );
         expect(tester.getRect(menu).left, greaterThan(layout.$1.width / 2));
+        // 三个入口都在标题栏，必须整体位于任务列表之上。
         expect(
           tester.getRect(menu).bottom,
-          lessThan(tester.getRect(filters).top),
+          lessThan(tester.getRect(firstTask).top),
+        );
+        expect(
+          tester.getRect(filters).bottom,
+          lessThan(tester.getRect(firstTask).top),
         );
         expect(
           tester.getRect(local).bottom,
-          lessThanOrEqualTo(tester.getRect(filters).top),
+          lessThan(tester.getRect(firstTask).top),
         );
-        final completed = find.byKey(
-          const ValueKey('download-filter-completed'),
-        );
-        final all = find.byKey(const ValueKey('download-filter-all'));
-        expect(tester.getRect(completed).top, tester.getRect(all).top);
-        await tester.ensureVisible(completed);
+        await tester.tap(filters);
+        await tester.pumpAndSettle();
+        final completed = find.widgetWithText(ChoiceChip, '已下载');
+        expect(completed, findsOneWidget);
         await tester.tap(completed);
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(FilledButton, '应用'));
         await tester.pumpAndSettle();
         expect(
           find.byKey(const ValueKey('download-task-task-0')),

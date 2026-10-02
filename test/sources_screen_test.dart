@@ -1,3 +1,4 @@
+import 'package:duanju_app/app_build.dart';
 import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/models.dart';
 import 'package:duanju_app/sources_screen.dart';
@@ -46,7 +47,8 @@ void main() {
     expect(find.byType(ExpansionTile), findsNothing);
     expect(store.sources.length, SourceSite.values.length);
     expect(tester.takeException(), isNull);
-  });
+    // 黄果系列入口只在 ALL_SOURCES 版本里编译，非全站源版本下这些卡片本就不存在。
+  }, skip: !allSourcesEnabled);
 
   testWidgets('tapping a 黄果 card and its actions keeps the app alive', (
     tester,
@@ -73,5 +75,5 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
     }
     expect(tester.takeException(), isNull);
-  });
+  }, skip: !allSourcesEnabled);
 }
