@@ -26,6 +26,7 @@ class RankingBoard {
     final source = sourceAliases[prefix] ?? prefix;
     return SourceSite.isKnown(source) ? source : '';
   }
+
   factory RankingBoard.fromJson(Map<String, dynamic> json) => RankingBoard(
     id: json['id'] as String? ?? '',
     source:

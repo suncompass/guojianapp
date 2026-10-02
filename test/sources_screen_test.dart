@@ -40,11 +40,7 @@ void main() {
       for (var i = 0; i < 6; i++) {
         await tester.pump(const Duration(milliseconds: 50));
       }
-      expect(
-        card,
-        findsOneWidget,
-        reason: '$id 应与其他站源一样独立成卡片',
-      );
+      expect(card, findsOneWidget, reason: '$id 应与其他站源一样独立成卡片');
     }
     expect(find.text('黄果'), findsNothing, reason: '不再使用黄果折叠分组');
     expect(find.byType(ExpansionTile), findsNothing);

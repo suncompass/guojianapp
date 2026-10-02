@@ -252,8 +252,7 @@ class _TelevisionControlsState extends State<TelevisionControls> {
     if (!mounted || !_tvVisible) return;
     final now = DateTime.now();
     final paintedAt = _progressPaintedAt;
-    if (paintedAt == null ||
-        now.difference(paintedAt) >= _progressInterval) {
+    if (paintedAt == null || now.difference(paintedAt) >= _progressInterval) {
       _progressPaintedAt = now;
       _progressTimer?.cancel();
       _progressTimer = null;
@@ -261,19 +260,15 @@ class _TelevisionControlsState extends State<TelevisionControls> {
       return;
     }
     if (_progressTimer?.isActive ?? false) return;
-    _progressTimer = Timer(
-      _progressInterval - now.difference(paintedAt),
-      () {
-        _progressTimer = null;
-        if (!mounted || !_tvVisible) return;
-        _progressPaintedAt = DateTime.now();
-        setState(() {});
-      },
-    );
+    _progressTimer = Timer(_progressInterval - now.difference(paintedAt), () {
+      _progressTimer = null;
+      if (!mounted || !_tvVisible) return;
+      _progressPaintedAt = DateTime.now();
+      setState(() {});
+    });
   }
 
-  bool get _tvVisible =>
-      _visible || _seekHint || widget.player.state.buffering;
+  bool get _tvVisible => _visible || _seekHint || widget.player.state.buffering;
 
   @override
   Widget build(BuildContext context) {

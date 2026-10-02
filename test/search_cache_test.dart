@@ -172,9 +172,6 @@ void main() {
     );
     await cache.flush();
     await cache.initialize(preferences);
-    expect(
-      cache.read('huangguoai', '一个乖乖女')?.items.single.title,
-      '一个乖乖女',
-    );
+    expect(cache.read('huangguoai', '一个乖乖女')?.items.single.title, '一个乖乖女');
   });
 }

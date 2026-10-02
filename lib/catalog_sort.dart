@@ -78,10 +78,7 @@ bool matchesDramaQuery(Drama drama, String query) {
 String searchKeyword(String title) {
   var value = title.trim();
   if (value.isEmpty) return '';
-  value = value.replaceAll(
-    RegExp(r'[（(\[【][^）)\]】]*[）)\]】]'),
-    '',
-  );
+  value = value.replaceAll(RegExp(r'[（(\[【][^）)\]】]*[）)\]】]'), '');
   value = value.replaceAll(
     RegExp(
       r'(?:第\s*[0-9零〇一二两兩三四五六七八九十百千]+\s*[季部篇]|'

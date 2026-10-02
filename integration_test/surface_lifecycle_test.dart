@@ -56,8 +56,7 @@ class LifeRepository extends AppRepository {
     Drama drama,
     Episode episode, {
     int quality = 0,
-  }) =>
-      native.resolve(drama, episode, quality: quality);
+  }) => native.resolve(drama, episode, quality: quality);
   @override
   Future<PlaybackPlan> fallback(PlaybackPlan current) =>
       native.fallback(current);
@@ -101,8 +100,10 @@ void main() {
         find.byType(VideoSurfaceHost).evaluate().isNotEmpty;
 
     await tester.pumpWidget(DuanjuApp(repository: repository, store: store));
-    await until(() => find.text('SurfaceLifecycle').evaluate().isNotEmpty,
-        'catalog');
+    await until(
+      () => find.text('SurfaceLifecycle').evaluate().isNotEmpty,
+      'catalog',
+    );
     await tester.tap(find.text('SurfaceLifecycle'));
     await until(mounted, 'player');
     await player().setVolume(0);
@@ -124,15 +125,8 @@ void main() {
 
     final after = player().state.position;
     // ignore: avoid_print
-    print('LIFE ${{
-      'mountedBefore': mountedBefore,
-      'mountedAfter': mounted(),
-      'surfaceAfter': find.byType(VideoSurfaceHost).evaluate().isNotEmpty,
-      'textureAfter': find.byType(Video).evaluate().isNotEmpty,
-      'beforeMs': before.inMilliseconds,
-      'afterMs': after.inMilliseconds,
-      'playedOn': after > before + const Duration(milliseconds: 500),
-      'width': player().state.width ?? 0,
-    }}');
+    print(
+      'LIFE ${{'mountedBefore': mountedBefore, 'mountedAfter': mounted(), 'surfaceAfter': find.byType(VideoSurfaceHost).evaluate().isNotEmpty, 'textureAfter': find.byType(Video).evaluate().isNotEmpty, 'beforeMs': before.inMilliseconds, 'afterMs': after.inMilliseconds, 'playedOn': after > before + const Duration(milliseconds: 500), 'width': player().state.width ?? 0}}',
+    );
   }, timeout: const Timeout(Duration(minutes: 6)));
 }
