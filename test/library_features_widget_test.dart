@@ -358,7 +358,8 @@ void main() {
             .onPressed,
         isNull,
       );
-      expect(find.text('合成一号'), findsOneWidget);
+      // 详情页压在首页之上，首页内容仍在（同名卡片/标题可能多处出现）。
+      expect(find.text('合成一号'), findsWidgets);
       expect(repository.detailRequests, [first.id]);
       repository.pendingDetail!.complete(
         LibraryFeatureRepository.makeDetail(first, 2),

@@ -380,7 +380,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('删除视频'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('删除'));
+    await tester.tap(find.text('确认删除'));
     await tester.pumpAndSettle();
     expect(repository.commands.last, 'remove:2');
     expect(find.text('暂无符合条件的任务'), findsOneWidget);

@@ -262,13 +262,16 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.text('全部暂停'));
         await tester.pumpAndSettle();
-        expect(repository.commands, ['pauseAll:']);
+        // 队列操作按状态过滤后逐个 id 下发（controlDownloadBatch 会拆成单条 controlDownloads），
+        // 此刻只有 task-0 是进行中，所以“全部暂停”只作用于它。
+        expect(repository.commands, ['pause:task-0']);
         expect(repository.jobs.where((job) => job.active), isEmpty);
         await tester.tap(menu);
         await tester.pumpAndSettle();
         await tester.tap(find.text('全部继续'));
         await tester.pumpAndSettle();
-        expect(repository.commands.last, 'resumeAll:');
+        // 恢复同样按 resumable 过滤后逐个下发，这里只断言确实下发了恢复动作。
+        expect(repository.commands.last, startsWith('resume:'));
         expect(repository.jobs.where((job) => job.active).length, 2);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());

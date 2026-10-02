@@ -130,7 +130,16 @@ void main() {
     (tester) async {
       SharedPreferences.setMockInitialValues({
         'profiles': jsonEncode([
-          const LocalProfile(id: 'default', name: '管理员', admin: true).toJson(),
+          // 多用户配置要求管理员必须设置 PIN（local_store 会校验 admin.protected），
+          // 否则整份配置被判为损坏并锁定，store.sources 变空、任何站源都不会被请求。
+          const LocalProfile(
+            id: 'default',
+            name: '管理员',
+            admin: true,
+            salt: '00000000000000000000000000000000',
+            pinHash:
+                '0000000000000000000000000000000000000000000000000000000000000000',
+          ).toJson(),
           const LocalProfile(
             id: 'viewer',
             name: '只看红果',

@@ -1,6 +1,7 @@
 import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/main.dart';
 import 'package:duanju_app/models.dart';
+import 'package:duanju_app/remote_widgets.dart';
 import 'package:duanju_app/app_build.dart';
 import 'package:duanju_app/follow_state.dart';
 import 'package:flutter/material.dart';
@@ -49,9 +50,11 @@ void main() {
       await tester.tap(find.text('测试短剧'));
       await tester.pumpAndSettle();
       expect(repository.detailCalls, 1);
-      // 选集默认折叠，展开后单集按钮才会构建。
-      await tester.tap(find.text('展开'));
-      await tester.pumpAndSettle();
+      // 选集默认折叠，展开后单集按钮才会构建（宽屏布局直接展示选集，没有“展开”）。
+      if (find.text('展开').evaluate().isNotEmpty) {
+        await tester.tap(find.text('展开'));
+        await tester.pumpAndSettle();
+      }
       expect(find.byKey(const ValueKey('episode-2')), findsOneWidget);
       // 追剧/收藏入口现在是“追剧与观看状态”菜单，选任一状态都会同时写入收藏。
       await tester.tap(find.byKey(const ValueKey('follow-status')));
@@ -72,13 +75,11 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('继续播放 · 第 $episode 集'), findsOneWidget);
         for (final number in [1, 2]) {
-          final button = tester.widget<OutlinedButton>(
+          // 单集按钮已改为 RemoteEpisodeButton，当前集通过 current 标记。
+          final button = tester.widget<RemoteEpisodeButton>(
             find.byKey(ValueKey('episode-$number')),
           );
-          expect(
-            button.style?.backgroundColor?.resolve({}),
-            number == episode ? isNotNull : isNull,
-          );
+          expect(button.current, number == episode);
         }
       }
       await local.clearHistory();
