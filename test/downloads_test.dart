@@ -303,6 +303,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    // 选集默认折叠，展开后单集按钮才会构建。
+    if (find.text('展开').evaluate().isNotEmpty) {
+      await tester.tap(find.text('展开'));
+      await tester.pumpAndSettle();
+    }
     await tester.tap(find.byKey(const ValueKey('episode-1')));
     await tester.pump();
     expect(find.text('这是一集 VIP 内容'), findsNothing);

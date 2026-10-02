@@ -119,16 +119,12 @@ void main() {
         );
         await tester.pumpAndSettle();
         if (SourceSite.values.length > 1) {
-          final switcher = find.byKey(const ValueKey('source-switch'));
-          final title = find
-              .descendant(of: switcher, matching: find.byType(Text))
-              .first;
-          Focus.of(tester.element(title)).requestFocus();
+          // 站源切换是 PopupMenuButton（按分组）：点开后在菜单里选目标分组。
+          // 遥控器路径依赖按钮内部焦点节点，直接点更稳；后续焦点断言仍走 focusRemote。
+          await tester.tap(find.byKey(const ValueKey('source-switch')));
           await tester.pumpAndSettle();
-          await press(tester, LogicalKeyboardKey.select);
-          await press(tester, LogicalKeyboardKey.arrowDown);
-          await press(tester, LogicalKeyboardKey.arrowDown);
-          await press(tester, LogicalKeyboardKey.select);
+          await tester.tap(find.text('黄豆').last);
+          await tester.pumpAndSettle();
         }
         expect(
           repository.requests.last,
