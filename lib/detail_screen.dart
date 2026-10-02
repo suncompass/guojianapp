@@ -38,8 +38,7 @@ class DetailScreen extends StatefulWidget {
 
   /// 与 DownloadsScreen 一致：让测试注入播放器桩，避免真实 media_kit 原生库。
   @visibleForTesting
-  final Widget Function(DramaDetail detail, int index, double position)?
-  playerBuilder;
+  final Widget Function(DramaDetail, int, double)? playerBuilder;
   @override
   State<DetailScreen> createState() => _DetailScreenState();
 }
