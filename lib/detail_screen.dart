@@ -28,12 +28,18 @@ class DetailScreen extends StatefulWidget {
     required this.store,
     this.resumeOnOpen = false,
     this.downloadOnOpen = false,
+    this.playerBuilder,
   });
   final Drama drama;
   final AppRepository repository;
   final LocalStore store;
   final bool resumeOnOpen;
   final bool downloadOnOpen;
+
+  /// 与 DownloadsScreen 一致：让测试注入播放器桩，避免真实 media_kit 原生库。
+  @visibleForTesting
+  final Widget Function(DramaDetail detail, int index, double position)?
+  playerBuilder;
   @override
   State<DetailScreen> createState() => _DetailScreenState();
 }
@@ -281,13 +287,14 @@ class _DetailScreenState extends State<DetailScreen> {
     }
     await Navigator.of(context).push(
       playerRoute(
-        PlayerScreen(
-          detail: detail,
-          initialIndex: index,
-          initialPosition: position,
-          repository: widget.repository,
-          store: widget.store,
-        ),
+        widget.playerBuilder?.call(detail, index, position) ??
+            PlayerScreen(
+              detail: detail,
+              initialIndex: index,
+              initialPosition: position,
+              repository: widget.repository,
+              store: widget.store,
+            ),
       ),
     );
     if (mounted) {

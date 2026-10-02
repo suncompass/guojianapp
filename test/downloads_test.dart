@@ -299,7 +299,18 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData.dark(),
-        home: DetailScreen(drama: drama, repository: repository, store: store),
+        home: DetailScreen(
+          drama: drama,
+          repository: repository,
+          store: store,
+          // 注入播放器桩：本用例验证“DSD 的 VIP 分集不弹确认框直接进播放”，
+          // 不需要真实 media_kit。
+          playerBuilder: (detail, index, position) {
+            expect(detail.episodes.map((episode) => episode.number), [1]);
+            expect(index, 0);
+            return const Scaffold(body: Text('桩播放器'));
+          },
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -309,9 +320,9 @@ void main() {
       await tester.pumpAndSettle();
     }
     await tester.tap(find.byKey(const ValueKey('episode-1')));
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.text('这是一集 VIP 内容'), findsNothing);
-    expect(find.text('正在准备播放'), findsOneWidget);
+    expect(find.text('桩播放器'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
