@@ -351,7 +351,13 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
       expect(find.text('正在进入播放'), findsNothing);
-      expect(find.text('立即播放'), findsNothing);
+      // 详情仍在请求中：播放按钮已渲染但处于禁用态，说明没有提前跳到播放器。
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const ValueKey('start-play')))
+            .onPressed,
+        isNull,
+      );
       expect(find.text('合成一号'), findsOneWidget);
       expect(repository.detailRequests, [first.id]);
       repository.pendingDetail!.complete(

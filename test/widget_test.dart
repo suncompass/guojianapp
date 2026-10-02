@@ -2,6 +2,7 @@ import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/main.dart';
 import 'package:duanju_app/models.dart';
 import 'package:duanju_app/app_build.dart';
+import 'package:duanju_app/follow_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -48,8 +49,14 @@ void main() {
       await tester.tap(find.text('测试短剧'));
       await tester.pumpAndSettle();
       expect(repository.detailCalls, 1);
+      // 选集默认折叠，展开后单集按钮才会构建。
+      await tester.tap(find.text('展开'));
+      await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('episode-2')), findsOneWidget);
-      await tester.tap(find.byTooltip('加入追剧'));
+      // 追剧/收藏入口现在是“追剧与观看状态”菜单，选任一状态都会同时写入收藏。
+      await tester.tap(find.byKey(const ValueKey('follow-status')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(FollowStatus.values.first.label).last);
       await tester.pumpAndSettle();
       expect(local.isFavorite(FixtureRepository.free.id), isTrue);
       for (final episode in [1, 2]) {
@@ -63,7 +70,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.text('继续第 $episode 集'), findsOneWidget);
+        expect(find.text('继续播放 · 第 $episode 集'), findsOneWidget);
         for (final number in [1, 2]) {
           final button = tester.widget<OutlinedButton>(
             find.byKey(ValueKey('episode-$number')),

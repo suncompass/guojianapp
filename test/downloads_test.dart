@@ -6,6 +6,7 @@ import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/models.dart';
 import 'package:duanju_app/playback_loader.dart';
 import 'package:duanju_app/player_screen.dart';
+import 'package:duanju_app/remote_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -326,6 +327,9 @@ void main() {
     );
     await tick(tester);
     await tick(tester);
+    // 合集默认折叠，单集条目要展开后才进入列表。
+    await tester.tap(find.text(FixtureRepository.free.title));
+    await tester.pumpAndSettle();
     // 单集操作搬到了每个任务右侧的“分集操作”菜单里。
     await tester.tap(
       find.descendant(
@@ -419,6 +423,9 @@ void main() {
         ),
       );
       await tick(tester);
+      // 合集默认折叠，单集条目要展开后才进入列表。
+      await tester.tap(find.text(FixtureRepository.free.title));
+      await tester.pumpAndSettle();
       // 已完成的任务要从“分集操作”菜单里选“本地播放”。
       await tester.tap(
         find.descendant(
@@ -537,18 +544,23 @@ void main() {
       await tester.pumpAndSettle();
       await tester.sendKeyEvent(LogicalKeyboardKey.select);
       await tester.pumpAndSettle();
-      // TV 列表用 RemoteList，条目 key 是 j-<任务 id>；download-task-* 只在手机布局里。
-      focusRemote(tester, find.byKey(const ValueKey('j-1')));
+      // TV 列表用 RemoteList，条目 key 只用于焦点标签，不能 byKey 定位；
+      // 合集默认折叠，首行是合集，按 select 展开后单集才入列。
+      focusRemote(tester, find.byType(RemoteListTile).first);
       await tester.pumpAndSettle();
-      for (var i = 0; i < 12; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.select);
+      await tester.pumpAndSettle();
+      // 展开后行序为 [合集, 合集操作, 第1集…第20集]，到第 13 集需下移 14 次。
+      for (var i = 0; i < 14; i++) {
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
         await tester.pumpAndSettle();
       }
       await tester.sendKeyEvent(LogicalKeyboardKey.select);
       await tester.pumpAndSettle();
-      expect(find.text('测试短剧 · 第 13 集').last, findsOneWidget);
-      await tester.sendKeyEvent(LogicalKeyboardKey.select);
-      await tick(tester);
+      // 单集操作现在是动作对话框（TV 布局），选“继续 / 重试”。
+      expect(find.text('继续 / 重试'), findsOneWidget);
+      await tester.tap(find.text('继续 / 重试'));
+      await tester.pumpAndSettle();
       expect(repository.commands.last, 'resume:13');
       await tester.pumpWidget(const SizedBox.shrink());
       expect(tester.takeException(), isNull);

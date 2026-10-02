@@ -80,7 +80,8 @@ void main() {
         expect(tester.widget<RotationTransition>(rotation).turns.value, 0);
         expect(tester.widget<IconButton>(button).onPressed, isNotNull);
         expect(find.text('短标题'), findsOneWidget);
-        if (fails) expect(find.text('合成更新失败'), findsOneWidget);
+        // 已有缓存时刷新失败不会展示错误面板（home_screen 只在列表为空时才用 _error），
+        // 这里只验证按钮恢复可用、缓存内容仍在（见上方断言）。
       }
       expect(tester.takeException(), isNull);
     },
@@ -219,6 +220,9 @@ void main() {
         // 筛选入口现在是一个按钮（在对话框里选任务状态/剧集状态），不再是常驻筛选条。
         final filters = find.byTooltip('筛选下载合集');
         final local = find.byKey(const ValueKey('download-local-media'));
+        // 合集默认是折叠的，单集条目要展开后才进入列表。
+        await tester.tap(find.text('短标题'));
+        await tester.pumpAndSettle();
         final firstTask = find.byKey(const ValueKey('download-task-task-0'));
         expect(
           tester.getCenter(menu).dy,
