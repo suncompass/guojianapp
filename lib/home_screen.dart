@@ -15,7 +15,6 @@ import 'recommendation_service.dart';
 import 'recommendations_screen.dart';
 import 'rankings_screen.dart';
 import 'detail_screen.dart';
-import 'playback_launch_screen.dart';
 import 'downloads_screen.dart';
 import 'local_store.dart';
 import 'lan_screen.dart';
@@ -744,13 +743,15 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       return;
     }
+    // 卡片点击进入详情页：详情页负责取详情、展示分集，续播由 resumeOnOpen 驱动。
+    // 不再经过 PlaybackLaunchScreen（那会让每次点击都闪一下“正在进入播放”的过渡页）。
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => PlaybackLaunchScreen(
+        builder: (_) => DetailScreen(
           drama: drama,
           repository: widget.repository,
           store: widget.store,
-          searchKeyword: _onlineSearch ? _submittedQuery : '',
+          resumeOnOpen: resume,
         ),
       ),
     );

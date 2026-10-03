@@ -556,7 +556,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      focusRemote(tester, find.byKey(const ValueKey('tv-nav-3')));
+      // 导航顺序为 主页 / 在看 / 追剧 / 历史 / 下载，电视端「下载」是第 5 项。
+      focusRemote(tester, find.byKey(const ValueKey('tv-nav-4')));
       await tester.pumpAndSettle();
       await tester.sendKeyEvent(LogicalKeyboardKey.select);
       await tester.pumpAndSettle();

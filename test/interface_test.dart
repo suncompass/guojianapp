@@ -161,7 +161,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       Size? catalogSize;
-      for (var tab = 0; tab < 3; tab++) {
+      // 导航顺序是 主页 / 在看 / 追剧 / 历史 / 下载，这里比对主页、追剧与历史三页的海报尺寸。
+      for (final tab in const [0, 2, 3]) {
         if (tab > 0) {
           final destination = layout.$3
               ? find.byKey(ValueKey('tv-nav-$tab'))
@@ -169,7 +170,7 @@ void main() {
               ? find.byKey(ValueKey('bottom-nav-$tab'))
               : find.descendant(
                   of: find.byType(NavigationRail),
-                  matching: find.text(tab == 1 ? '追剧' : '最近观看'),
+                  matching: find.text(tab == 2 ? '追剧' : '历史'),
                 );
           await tester.tap(destination);
           await tester.pumpAndSettle();

@@ -82,7 +82,7 @@ void main() {
       repository.pendingCatalog = null;
       pending.complete(CatalogPage(repository.dramas('hongguo')));
       await tester.pumpAndSettle();
-      expect(find.byTooltip('更新当前站源'), findsOneWidget);
+      expect(find.byTooltip('更新剧库'), findsOneWidget);
 
       if (allSourcesEnabled) {
         await source('黄豆');
@@ -101,7 +101,8 @@ void main() {
       await store.setThemeMode('dark');
       await tester.pumpAndSettle();
       await capture('interface-dark-catalog');
-      await tester.tap(find.byKey(const ValueKey('bottom-nav-3')));
+      // 导航顺序为 主页 / 在看 / 追剧 / 历史 / 下载，下载页是第 5 项。
+      await tester.tap(find.byKey(const ValueKey('bottom-nav-4')));
       await tester.pumpAndSettle();
       await capture('interface-dark-downloads');
       await store.setThemeMode('light');

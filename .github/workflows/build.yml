@@ -46,6 +46,7 @@ jobs:
       - run: go test -race -ldflags="-X duanjuapp/native/core.buildAllSources=true" ./...
         working-directory: native
 
+  # 打包 job 不依赖 checks：checks 失败只影响状态，不阻塞出包。
   android:
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -100,8 +101,84 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # Windows / iOS 打包保留，但允许失败：这两个平台还没验收，失败不拖红整条流水线。
+  windows:
+    needs: checks
+    continue-on-error: true
+    runs-on: windows-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - edition: hongguojian
+            arguments: ''
+          - edition: zhenguojian
+            arguments: '--all-sources'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: native/go.mod
+          cache-dependency-path: native/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.4'
+          channel: stable
+          cache: true
+      - uses: egor-tensin/setup-mingw@v2
+        with:
+          platform: x64
+      - run: python scripts/build_windows.py ${{ matrix.arguments }}
+      - run: choco install ffmpeg --no-progress -y
+      - run: python scripts/smoke_windows.py ${{ matrix.arguments }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.edition }}-windows
+          path: dist/windows/*
+          if-no-files-found: error
+          retention-days: 14
+
+  ios:
+    needs: checks
+    continue-on-error: true
+    runs-on: macos-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - edition: hongguojian
+            arguments: ''
+          - edition: zhenguojian
+            arguments: '--all-sources'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: native/go.mod
+          cache-dependency-path: native/go.sum
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.4'
+          channel: stable
+          cache: true
+      - run: python3 scripts/build_ios.py ${{ matrix.arguments }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.edition }}-ios-unsigned
+          path: dist/ios/*
+          if-no-files-found: error
+          retention-days: 14
+
   # 每次打包成功都会发布/更新 Release（PR 除外）：
-  #   - 打 tag  -> 发布以该 tag 命名的版本（例如 0.2），APK 作为附件
+  #   - 打 tag  -> 发布以该 tag 命名的版本（例如 0.2），APK / Windows / iOS 包作为附件
   #   - 推分支/手动触发 -> 更新滚动版本 latest，保证 Releases 页永远有最新安装包
   release:
     needs: android
@@ -114,10 +191,11 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-      - name: 收集 APK
+      - name: 收集安装包
         run: |
           mkdir -p release
-          find artifacts -name '*.apk' -type f -exec cp {} release/ \;
+          find artifacts -type f \( -name '*.apk' -o -name '*.zip' -o -name '*.ipa' \) \
+            -exec cp {} release/ \;
           ls -l release
       - name: 发布 / 更新 Release
         env:
@@ -136,16 +214,16 @@ jobs:
           notes="由 CI 自动发布 · 提交 ${GITHUB_SHA:0:7} · $(date -u '+%Y-%m-%d %H:%M') UTC"
 
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            # 先清掉旧附件，避免版本号变化后同一个 Release 里堆积过期的 APK
+            # 先清掉旧附件，避免版本号变化后同一个 Release 里堆积过期的安装包
             for name in $(gh release view "$tag" --repo "$GITHUB_REPOSITORY" \
                 --json assets --jq '.assets[].name'); do
               gh release delete-asset "$tag" "$name" --repo "$GITHUB_REPOSITORY" --yes
             done
             gh release edit "$tag" --repo "$GITHUB_REPOSITORY" \
               --title "$title" --notes "$notes"
-            gh release upload "$tag" release/*.apk --repo "$GITHUB_REPOSITORY"
+            gh release upload "$tag" release/* --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$tag" release/*.apk \
+            gh release create "$tag" release/* \
               --repo "$GITHUB_REPOSITORY" \
               --title "$title" \
               --notes "$notes" \
