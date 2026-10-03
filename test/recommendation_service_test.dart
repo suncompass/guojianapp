@@ -310,6 +310,9 @@ void main() {
 
   test('站源与分类筛选', () async {
     final service = await attach();
+    // 筛选会持久化，且「在看」首次进入默认只选红果（README 0.2.84）；
+    // 本用例先显式回到「全部」，再验证单选与分类筛选。
+    service.toggleSource(recommendationAllSources);
     final other = NostrIdentity.generate();
     final event = NostrIdentity.sign(
       kind: recommendationKind,
@@ -449,6 +452,8 @@ void main() {
 
   test('站源可多选，全部与具体站源互斥', () async {
     final service = await attach();
+    // 同上：先回到「全部」，后面逐个 toggle 的期望才成立。
+    service.toggleSource(recommendationAllSources);
     final available = SourceSite.values.toList();
     final used = available.take(2).toList();
     for (final site in used) {
