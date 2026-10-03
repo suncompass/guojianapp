@@ -116,47 +116,51 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # Windows / iOS 打包保留，但允许失败：这两个平台还没验收，失败不拖红整条流水线；
-  # 也不依赖 checks，避免测试红的时候连包都出不来。
-  windows:
-    continue-on-error: true
-    runs-on: windows-latest
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - edition: hongguojian
-            arguments: ''
-          - edition: zhenguojian
-            arguments: '--all-sources'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: native/go.mod
-          cache-dependency-path: native/go.sum
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.47.4'
-          channel: stable
-          cache: true
-      - uses: egor-tensin/setup-mingw@v2
-        with:
-          platform: x64
-      - run: python scripts/build_windows.py ${{ matrix.arguments }}
-      - run: choco install ffmpeg --no-progress -y
-      - run: python scripts/smoke_windows.py ${{ matrix.arguments }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.edition }}-windows
-          path: dist/windows/*
-          if-no-files-found: error
-          retention-days: 14
+  # Windows 打包暂时注释掉：windows-latest 上 egor-tensin/setup-mingw@v2 装 MinGW 直接失败，
+  # build_windows.py 根本没开始跑（job 一直红，只靠 continue-on-error 不阻塞流水线，没意义）。
+  # 要恢复 Windows 出包：取消下面注释，并把 setup-mingw 换成可用方案
+  # （例如 msys2/setup-msys2@v2 + mingw-w64-x86_64-gcc，或在 windows-latest 上 choco install mingw）。
+  #
+  # windows:
+  #   continue-on-error: true
+  #   runs-on: windows-latest
+  #   timeout-minutes: 45
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       include:
+  #         - edition: hongguojian
+  #           arguments: ''
+  #         - edition: zhenguojian
+  #           arguments: '--all-sources'
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-go@v5
+  #       with:
+  #         go-version-file: native/go.mod
+  #         cache-dependency-path: native/go.sum
+  #     - uses: actions/setup-python@v5
+  #       with:
+  #         python-version: '3.12'
+  #     - uses: subosito/flutter-action@v2
+  #       with:
+  #         flutter-version: '3.47.4'
+  #         channel: stable
+  #         cache: true
+  #     - uses: egor-tensin/setup-mingw@v2
+  #       with:
+  #         platform: x64
+  #     - run: python scripts/build_windows.py ${{ matrix.arguments }}
+  #     - run: choco install ffmpeg --no-progress -y
+  #     - run: python scripts/smoke_windows.py ${{ matrix.arguments }}
+  #     - uses: actions/upload-artifact@v4
+  #       with:
+  #         name: ${{ matrix.edition }}-windows
+  #         path: dist/windows/*
+  #         if-no-files-found: error
+  #         retention-days: 14
 
+  # iOS 打包保留，允许失败：未验收、不拖红流水线，也不依赖 checks。
   ios:
     continue-on-error: true
     runs-on: macos-latest
@@ -192,7 +196,7 @@ jobs:
           retention-days: 14
 
   # 每次打包成功都会发布/更新 Release（PR 除外）：
-  #   - 打 tag  -> 发布以该 tag 命名的版本（例如 0.2），APK / Windows / iOS 包作为附件
+  #   - 打 tag  -> 发布以该 tag 命名的版本（例如 0.2），打出来的 apk / ios 包作为附件
   #   - 推分支/手动触发 -> 更新滚动版本 latest，保证 Releases 页永远有最新安装包
   release:
     needs: android
