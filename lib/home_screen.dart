@@ -10,9 +10,12 @@ import 'catalog_filters.dart';
 import 'catalog_browser.dart';
 import 'catalog_sort.dart';
 import 'catalog_sort_sheet.dart';
+import 'feeds_screen.dart';
+import 'recommendation_service.dart';
 import 'recommendations_screen.dart';
 import 'rankings_screen.dart';
 import 'detail_screen.dart';
+import 'playback_launch_screen.dart';
 import 'downloads_screen.dart';
 import 'local_store.dart';
 import 'lan_screen.dart';
@@ -41,6 +44,11 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   static const _recommendationCategory = 'app:recommendations';
+  static const _tabDiscover = 0;
+  static const _tabFeed = 1;
+  static const _tabFollow = 2;
+  static const _tabHistory = 3;
+  static const _tabDownloads = 4;
   final _search = TextEditingController();
   final _scroll = ScrollController();
   Timer? _debounce;
@@ -52,7 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _hasMore = true;
   String? _error;
   int _generation = 0;
-  int _tab = 0;
+  int _tab = _tabDiscover;
   String _submittedQuery = '';
   final _categorySelections = <String, String>{};
   late final CatalogBrowser _browser;
@@ -387,7 +395,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _televisionBack() {
     if (_selectionMode) {
       _cancelSelection();
-    } else if (_tab != 0) {
+    } else if (_tab != _tabDiscover) {
       setState(() => _tab = 0);
     } else if (_search.text.isNotEmpty) {
       _search.clear();
@@ -409,6 +417,7 @@ class _HomeScreenState extends State<HomeScreen> {
     )..addListener(_updateChanged);
     _updater.startWatching();
     widget.repository.catalogUpdates.addListener(_metadataChanged);
+    RecommendationService.current?.attach(widget.store);
     if (widget.store.sources.isNotEmpty) {
       _load(useCache: true);
       _loadCategories();
@@ -419,6 +428,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    RecommendationService.current?.detach();
     _updater.removeListener(_updateChanged);
     _updater.dispose();
     _cacheRefreshTimer?.cancel();
@@ -734,15 +744,13 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       return;
     }
-    // 卡片点击进入详情页：详情页负责取详情、展示分集，续播由 resumeOnOpen 驱动。
-    // 不再经过 PlaybackLaunchScreen（那会让每次点击都闪一下“正在进入播放”的过渡页）。
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => DetailScreen(
+        builder: (_) => PlaybackLaunchScreen(
           drama: drama,
           repository: widget.repository,
           store: widget.store,
-          resumeOnOpen: resume,
+          searchKeyword: _onlineSearch ? _submittedQuery : '',
         ),
       ),
     );
@@ -879,10 +887,12 @@ class _HomeScreenState extends State<HomeScreen> {
         final television = AppLayout.isTelevision(context);
         final desktop = constraints.maxWidth >= 840;
         final navEntries = <(int, IconData, String)>[
-          (0, Icons.explore_rounded, '发现'),
-          (1, Icons.bookmark_rounded, '追剧'),
-          (2, Icons.history_rounded, '最近观看'),
-          if (widget.store.canDownload) (3, Icons.download_rounded, '下载'),
+          (_tabDiscover, Icons.home_rounded, '主页'),
+          (_tabFeed, Icons.play_circle_rounded, '在看'),
+          (_tabFollow, Icons.bookmark_rounded, '追剧'),
+          (_tabHistory, Icons.history_rounded, '历史'),
+          if (widget.store.canDownload)
+            (_tabDownloads, Icons.download_rounded, '下载'),
         ];
         final scaffold = Scaffold(
           appBar: AppBar(
@@ -894,7 +904,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   )
-                : _tab == 0
+                : _tab == _tabDiscover
                 ? PopupMenuButton<SourceGroup>(
                     key: const ValueKey('source-switch'),
                     tooltip: '切换站源',
@@ -933,7 +943,15 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   )
-                : const Text(appName),
+                : Text(
+                    switch (_tab) {
+                      _tabFeed => '在看',
+                      _tabFollow => '追剧',
+                      _tabHistory => '历史',
+                      _tabDownloads => '下载',
+                      _ => appName,
+                    },
+                  ),
             actions: [
               if (_selectionMode) ...[
                 TextButton(
@@ -950,14 +968,22 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: const Text('取消'),
                 ),
               ] else ...[
-                if (_tab == 1)
+                if (_tab == _tabFeed)
+                  IconButton(
+                    key: const ValueKey('feed-refresh'),
+                    tooltip: '刷新动态',
+                    onPressed: () =>
+                        RecommendationService.current?.refresh(),
+                    icon: const Icon(Icons.refresh_rounded),
+                  ),
+                if (_tab == _tabFollow)
                   IconButton(
                     key: const ValueKey('follow-lan-sync'),
                     tooltip: '追剧同步',
                     onPressed: () => openLanSync(context),
                     icon: const Icon(Icons.sync_rounded),
                   ),
-                if (_tab == 0) ...[
+                if (_tab == _tabDiscover) ...[
                   if (!_showRecommendations)
                     IconButton(
                       tooltip: '排序与筛选 · ${widget.store.catalogView.sort.label}',
@@ -997,7 +1023,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     onPressed: _toggleSearch,
                   ),
                 ],
-                if (_tab == 0 &&
+                if (_tab == _tabDiscover &&
                     !_showRecommendations &&
                     constraints.maxWidth >= 400)
                   RefreshAction(
@@ -1062,7 +1088,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     }
                   },
                   itemBuilder: (_) => [
-                    if (_tab == 0 &&
+                    if (_tab == _tabDiscover &&
                         !_showRecommendations &&
                         constraints.maxWidth < 400)
                       PopupMenuItem(
@@ -1113,7 +1139,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         spacing: 14,
                         padding: EdgeInsets.zero,
                         autofocus: true,
-                        onExitRight: _tab == 0
+                        onExitRight: _tab == _tabDiscover
                             ? () => _gridKey.currentState?.focusCurrent()
                             : null,
                         itemBuilder: (_, index, node, onFocus) {
@@ -1140,9 +1166,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     groupAlignment: -.8,
                     destinations: [
                       NavigationRailDestination(
-                        icon: Icon(Icons.explore_outlined),
-                        selectedIcon: Icon(Icons.explore),
-                        label: Text('发现'),
+                        icon: Icon(Icons.home_outlined),
+                        selectedIcon: Icon(Icons.home_rounded),
+                        label: Text('主页'),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.play_circle_outline_rounded),
+                        selectedIcon: Icon(Icons.play_circle_rounded),
+                        label: Text('在看'),
                       ),
                       NavigationRailDestination(
                         icon: Icon(Icons.bookmark_border_rounded),
@@ -1151,7 +1182,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       NavigationRailDestination(
                         icon: Icon(Icons.history_rounded),
-                        label: Text('最近观看'),
+                        label: Text('历史'),
                       ),
                       if (widget.store.canDownload)
                         NavigationRailDestination(
@@ -1164,14 +1195,23 @@ class _HomeScreenState extends State<HomeScreen> {
                   const VerticalDivider(width: 1, thickness: 1),
                 ],
                 Expanded(
-                  child: _tab == 0
+                  child: _tab == _tabDiscover
                       ? widget.store.sources.isEmpty
                             ? const StatusPanel(
                                 title: '暂无可用站源',
                                 message: '请联系管理员为当前用户开放站源。',
                               )
                             : _catalog(selectionInBody: desktop || television)
-                      : _tab == 3
+                      : _tab == _tabFeed
+                      ? FeedsScreen(
+                          key: const ValueKey('feed-tab'),
+                          repository: widget.repository,
+                          store: widget.store,
+                          onExitLeft: television
+                              ? () => _navKey.currentState?.focusCurrent()
+                              : null,
+                        )
+                      : _tab == _tabDownloads
                       ? DownloadsScreen(
                           repository: widget.repository,
                           store: widget.store,
@@ -1181,7 +1221,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           key: ValueKey('saved-tab-$_tab'),
                           repository: widget.repository,
                           store: widget.store,
-                          history: _tab == 2,
+                          history: _tab == _tabHistory,
                           remoteAutofocus: television,
                           onExitLeft: television
                               ? () => _navKey.currentState?.focusCurrent()
@@ -1208,9 +1248,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   onDestinationSelected: _changeTab,
                   destinations: [
                     NavigationDestination(
-                      icon: Icon(Icons.explore_outlined),
-                      selectedIcon: Icon(Icons.explore),
-                      label: '发现',
+                      icon: Icon(Icons.home_outlined),
+                      selectedIcon: Icon(Icons.home_rounded),
+                      label: '主页',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.play_circle_outline_rounded),
+                      selectedIcon: Icon(Icons.play_circle_rounded),
+                      label: '在看',
                     ),
                     NavigationDestination(
                       icon: Icon(Icons.bookmark_border_rounded),
@@ -1219,7 +1264,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     NavigationDestination(
                       icon: Icon(Icons.history_rounded),
-                      label: '最近观看',
+                      label: '历史',
                     ),
                     if (widget.store.canDownload)
                       NavigationDestination(
@@ -1234,7 +1279,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return PopScope(
           canPop:
               !_selectionMode &&
-              (!television || _tab == 0 && _search.text.isEmpty),
+              (!television || _tab == _tabDiscover && _search.text.isEmpty),
           onPopInvokedWithResult: (didPop, result) {
             if (!didPop) _televisionBack();
           },

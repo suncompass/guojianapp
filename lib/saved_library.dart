@@ -162,7 +162,7 @@ class _SavedLibraryState extends State<SavedLibrary> {
             children: [
               Expanded(
                 child: Text(
-                  '${widget.history ? '最近观看' : '我的追剧'} · ${all.length}',
+                  '${widget.history ? '历史' : '我的追剧'} · ${all.length}',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ),

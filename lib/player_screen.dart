@@ -29,6 +29,7 @@ import 'playback_preferences.dart';
 import 'player_controls.dart';
 import 'player_interactions.dart';
 import 'player_menu.dart';
+import 'recommendation_service.dart';
 import 'screen_awake.dart';
 import 'search_cache.dart';
 import 'television_controls.dart';
@@ -1014,6 +1015,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (store.profileEpoch != _profileEpoch) return;
       if (widget.mediaId == null) {
         await store.saveWatch(entry);
+        RecommendationService.current?.observe(entry);
         if (flush) LanController.current?.flush();
       } else {
         await store.saveMediaWatch(widget.mediaId!, entry);

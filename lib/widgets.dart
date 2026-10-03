@@ -330,6 +330,8 @@ class DramaTile extends StatelessWidget {
     this.onFocus,
     this.actions,
     this.badge,
+    this.countBadge,
+    this.countBadgeHighlight = false,
     this.selected,
     this.onMore,
     this.onLongPress,
@@ -342,6 +344,8 @@ class DramaTile extends StatelessWidget {
   final VoidCallback? onFocus;
   final Widget? actions;
   final String? badge;
+  final String? countBadge;
+  final bool countBadgeHighlight;
   final bool? selected;
   final VoidCallback? onMore;
   final VoidCallback? onLongPress;
@@ -396,6 +400,37 @@ class DramaTile extends StatelessWidget {
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              if (countBadge != null && countBadge!.isNotEmpty)
+                Positioned(
+                  right: 6,
+                  bottom: 6,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: countBadgeHighlight
+                          ? Theme.of(context).colorScheme.primary
+                          : Colors.black.withValues(alpha: .62),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 4,
+                      ),
+                      child: Text(
+                        countBadge!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: countBadgeHighlight
+                              ? Theme.of(context).colorScheme.onPrimary
+                              : Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
