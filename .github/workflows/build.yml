@@ -37,6 +37,21 @@ jobs:
           cache: true
       - run: flutter pub get --enforce-lockfile
       - run: dart format --output=none --set-exit-if-changed lib test integration_test test_driver
+      # 格式检查失败时把 dart format 的结果导成补丁，便于在没有 Dart 工具链的机器上直接 git apply。
+      - name: 导出格式化补丁
+        if: failure()
+        run: |
+          dart format lib test integration_test test_driver
+          git diff > format.patch
+          wc -l format.patch
+      - name: 上传格式化补丁
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: format-patch
+          path: format.patch
+          if-no-files-found: ignore
+          retention-days: 7
       - run: dart analyze lib test integration_test test_driver
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: flutter test --dart-define=DISABLE_REMOTE_IMAGES=true
