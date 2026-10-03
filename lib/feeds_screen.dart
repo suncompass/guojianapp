@@ -260,12 +260,12 @@ class _FeedsScreenState extends State<FeedsScreen> {
     if (mounted) _toast('已删除 ${selected.length} 部我发布的记录');
   }
 
-  List<String> _blockCandidates(FeedItem item, RecommendationService service) {    final candidates =
-        [
-          for (final pubkey in item.publishers)
-            if (pubkey != service.publicKey && !service.blockedPublisher(pubkey))
-              pubkey,
-        ]..sort();
+  List<String> _blockCandidates(FeedItem item, RecommendationService service) {
+    final candidates = [
+      for (final pubkey in item.publishers)
+        if (pubkey != service.publicKey && !service.blockedPublisher(pubkey))
+          pubkey,
+    ]..sort();
     return candidates;
   }
 
@@ -283,10 +283,7 @@ class _FeedsScreenState extends State<FeedsScreen> {
           child: ListView(
             shrinkWrap: true,
             children: [
-              const ListTile(
-                dense: true,
-                title: Text('选择要屏蔽的发布者'),
-              ),
+              const ListTile(dense: true, title: Text('选择要屏蔽的发布者')),
               for (final pubkey in candidates)
                 ListTile(
                   key: ValueKey('block-$pubkey'),
@@ -315,10 +312,7 @@ class _FeedsScreenState extends State<FeedsScreen> {
   Widget build(BuildContext context) {
     final service = _service;
     if (service == null) {
-      return const StatusPanel(
-        title: '动态尚未就绪',
-        message: '重新打开应用后会自动连接推荐动态。',
-      );
+      return const StatusPanel(title: '动态尚未就绪', message: '重新打开应用后会自动连接推荐动态。');
     }
     return AnimatedBuilder(
       animation: service,
@@ -358,9 +352,7 @@ class _FeedsScreenState extends State<FeedsScreen> {
                   : null,
             ),
             if (service.notice.isNotEmpty) _noticeBar(service),
-            Expanded(
-              child: _grid(service, items, television),
-            ),
+            Expanded(child: _grid(service, items, television)),
           ],
         );
       },
@@ -373,7 +365,11 @@ class _FeedsScreenState extends State<FeedsScreen> {
       padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
       child: Row(
         children: [
-          Icon(Icons.info_outline_rounded, size: 16, color: theme.colorScheme.error),
+          Icon(
+            Icons.info_outline_rounded,
+            size: 16,
+            color: theme.colorScheme.error,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(service.notice, style: theme.textTheme.bodySmall),

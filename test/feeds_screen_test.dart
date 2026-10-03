@@ -65,8 +65,12 @@ void main() {
     addTearDown(tester.view.reset);
     RecommendationService.current = RecommendationService(
       preferences,
-      relayFactory: (relays, onEvent, onStatus, onNotice) =>
-          _FakeRelay(relays, onEvent: onEvent, onStatus: onStatus, onNotice: onNotice),
+      relayFactory: (relays, onEvent, onStatus, onNotice) => _FakeRelay(
+        relays,
+        onEvent: onEvent,
+        onStatus: onStatus,
+        onNotice: onNotice,
+      ),
     );
     await tester.pumpWidget(
       DuanjuApp(repository: FixtureRepository(), store: store),
@@ -94,8 +98,12 @@ void main() {
     late _FakeRelay relay;
     RecommendationService.current = RecommendationService(
       preferences,
-      relayFactory: (relays, onEvent, onStatus, onNotice) =>
-          relay = _FakeRelay(relays, onEvent: onEvent, onStatus: onStatus, onNotice: onNotice),
+      relayFactory: (relays, onEvent, onStatus, onNotice) => relay = _FakeRelay(
+        relays,
+        onEvent: onEvent,
+        onStatus: onStatus,
+        onNotice: onNotice,
+      ),
     );
     await tester.pumpWidget(
       DuanjuApp(repository: FixtureRepository(), store: store),

@@ -144,7 +144,6 @@ class RecommendationVector {
   final String pubkey;
   final int createdAt;
   final List<RecommendationEntry> items;
-
 }
 
 /// 榜单聚合后的一条：同一部剧按推荐人数合并。
@@ -202,7 +201,8 @@ RecommendationVector? decodeVectorEvent(NostrEvent event) {
     return null;
   }
   if (content is! Map) return null;
-  if (content['v'] is! num || (content['v'] as num).toInt() != recommendationVersion) {
+  if (content['v'] is! num ||
+      (content['v'] as num).toInt() != recommendationVersion) {
     return null;
   }
   final raw = content['i'];
@@ -238,7 +238,8 @@ List<FeedItem> buildFeed(
           ? item.at
           : latest[item.id] ?? 0;
       final previous = entries[item.id];
-      if (previous == null || (previous.cover.isEmpty && item.cover.isNotEmpty)) {
+      if (previous == null ||
+          (previous.cover.isEmpty && item.cover.isNotEmpty)) {
         entries[item.id] = item;
       }
       (owners[item.id] ??= <String>{}).add(vector.pubkey);
@@ -258,7 +259,9 @@ List<FeedItem> buildFeed(
         category: entry.category,
         recommenders: people,
         latest: latest[id] ?? 0,
-        mine: minePubkey.isNotEmpty && (owners[id]?.contains(minePubkey) ?? false),
+        mine:
+            minePubkey.isNotEmpty &&
+            (owners[id]?.contains(minePubkey) ?? false),
         publishers: owners[id] ?? const {},
       ),
     );

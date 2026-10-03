@@ -147,9 +147,7 @@ class RecommendationService extends ChangeNotifier {
   List<CatalogCategory> get categoryFilters => _categoryChoices;
 
   void attach(LocalStore store) {
-    if (_attached &&
-        identical(_local, store) &&
-        _profile == store.profile.id) {
+    if (_attached && identical(_local, store) && _profile == store.profile.id) {
       return;
     }
     _teardown();
@@ -179,9 +177,7 @@ class RecommendationService extends ChangeNotifier {
           ? {recommendationDefaultSource}
           : <String>{};
     }
-    _sourceFocus = _sources.isEmpty
-        ? recommendationAllSources
-        : _sources.last;
+    _sourceFocus = _sources.isEmpty ? recommendationAllSources : _sources.last;
     _categoryFilter = filter.category;
     _publishedAt = _store.publishedAt(_profile);
     _pendingPublish = _store.pending(_profile);
@@ -287,11 +283,7 @@ class RecommendationService extends ChangeNotifier {
 
   void _saveFilter() {
     unawaited(
-      _store.setFilter(
-        _profile,
-        sources: _sources,
-        category: _categoryFilter,
-      ),
+      _store.setFilter(_profile, sources: _sources, category: _categoryFilter),
     );
   }
 
@@ -314,10 +306,7 @@ class RecommendationService extends ChangeNotifier {
     final state = _watch[drama.id] ??= RecommendationWatch(
       entry: RecommendationEntry.fromDrama(drama, at: 0),
     );
-    state.entry = RecommendationEntry.fromDrama(
-      drama,
-      at: state.entry.at,
-    );
+    state.entry = RecommendationEntry.fromDrama(drama, at: state.entry.at);
     final episode = entry.episode;
     if (state.lastEpisode == episode && state.lastPosition != null) {
       final delta = entry.position - state.lastPosition!;
@@ -478,15 +467,10 @@ class RecommendationService extends ChangeNotifier {
       if (!_attached || profile != _profile) return;
       _pendingPublish = accepted == 0;
       await _store.setPending(profile, _pendingPublish);
-      _notice = _pendingPublish
-          ? 'relay 未连接，推荐已保存在本机，联网后自动补发'
-          : '';
+      _notice = _pendingPublish ? 'relay 未连接，推荐已保存在本机，联网后自动补发' : '';
       if (_pendingPublish) {
         _retryTimer?.cancel();
-        _retryTimer = Timer(
-          publishRetryDelay,
-          () => unawaited(_publish()),
-        );
+        _retryTimer = Timer(publishRetryDelay, () => unawaited(_publish()));
       }
     } catch (_) {
       _pendingPublish = true;

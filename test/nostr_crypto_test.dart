@@ -60,10 +60,7 @@ const referenceEvents = [
 Uint8List _bytes(String hex) {
   final out = Uint8List(hex.length ~/ 2);
   for (var index = 0; index < out.length; index++) {
-    out[index] = int.parse(
-      hex.substring(index * 2, index * 2 + 2),
-      radix: 16,
-    );
+    out[index] = int.parse(hex.substring(index * 2, index * 2 + 2), radix: 16);
   }
   return out;
 }
@@ -127,10 +124,7 @@ void main() {
 
   test('非法私钥被拒绝', () {
     expect(() => NostrIdentity.publicKeyOf('00'), throwsFormatException);
-    expect(
-      () => NostrIdentity.publicKeyOf('z' * 64),
-      throwsFormatException,
-    );
+    expect(() => NostrIdentity.publicKeyOf('z' * 64), throwsFormatException);
     expect(
       () => NostrIdentity.publicKeyOf(
         'fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141',

@@ -160,35 +160,36 @@ void main() {
     store.dispose();
   });
 
-  testWidgets('settings list keeps the last entry above the system navigation', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1;
-    tester.view.padding = const FakeViewPadding(top: 24, bottom: 34);
-    addTearDown(tester.view.reset);
-    final store = await localStore();
-    final repository = FixtureRepository();
-    await tester.pumpWidget(
-      MaterialApp(
-        home: SettingsScreen(repository: repository, store: store),
-      ),
-    );
-    await tester.pumpAndSettle();
-    final list = tester.widget<ListView>(find.byType(ListView));
-    expect((list.padding! as EdgeInsets).bottom, 50);
-    await tester.scrollUntilVisible(find.text('导入剧库'), 120);
-    await tester.pumpAndSettle();
-    expect(find.text('导入剧库'), findsOneWidget);
-    final importRect = tester.getRect(find.text('导入剧库'));
-    expect(
-      importRect.bottom,
-      lessThanOrEqualTo(844 - 34),
-      reason: '最后一项要留在系统手势条上方',
-    );
-    await tester.pumpWidget(const SizedBox.shrink());
-    store.dispose();
-  });
+  testWidgets(
+    'settings list keeps the last entry above the system navigation',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(top: 24, bottom: 34);
+      addTearDown(tester.view.reset);
+      final store = await localStore();
+      final repository = FixtureRepository();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SettingsScreen(repository: repository, store: store),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final list = tester.widget<ListView>(find.byType(ListView));
+      expect((list.padding! as EdgeInsets).bottom, 50);
+      await tester.scrollUntilVisible(find.text('导入剧库'), 120);
+      await tester.pumpAndSettle();
+      expect(find.text('导入剧库'), findsOneWidget);
+      final importRect = tester.getRect(find.text('导入剧库'));
+      expect(
+        importRect.bottom,
+        lessThanOrEqualTo(844 - 34),
+        reason: '最后一项要留在系统手势条上方',
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      store.dispose();
+    },
+  );
 
   for (final count in [3, 4]) {
     testWidgets(

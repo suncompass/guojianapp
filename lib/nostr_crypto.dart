@@ -149,14 +149,7 @@ String eventId({
   required List<List<String>> tags,
   required String content,
 }) {
-  final serialized = jsonEncode([
-    0,
-    pubkey,
-    createdAt,
-    kind,
-    tags,
-    content,
-  ]);
+  final serialized = jsonEncode([0, pubkey, createdAt, kind, tags, content]);
   return _bytesToHex(
     Uint8List.fromList(sha256.convert(utf8.encode(serialized)).bytes),
   );
@@ -199,8 +192,7 @@ _Point? _add(_Point? left, _Point? right) {
     if (_mod(left.y + right.y) == BigInt.zero) return null;
     return _double(left);
   }
-  final slope =
-      _mod(right.y - left.y) * _modInverse(_mod(right.x - left.x));
+  final slope = _mod(right.y - left.y) * _modInverse(_mod(right.x - left.x));
   final x = _mod(slope * slope - left.x - right.x);
   final y = _mod(slope * (left.x - x) - left.y);
   return _Point(x, y);
@@ -232,9 +224,7 @@ Uint8List _sign({
   if (message.length != 32) throw const FormatException('签名内容必须是 32 字节');
   if (aux.length != 32) throw const FormatException('辅助随机数必须是 32 字节');
   final normalized = point.y.isEven ? secret : _order - secret;
-  final mask = _bytesToBig(
-    _taggedHash('BIP0340/aux', aux),
-  );
+  final mask = _bytesToBig(_taggedHash('BIP0340/aux', aux));
   final tweaked = _bytes32(normalized ^ mask);
   final nonceHash = _taggedHash('BIP0340/nonce', [
     ...tweaked,
@@ -283,16 +273,18 @@ Uint8List _hexToBytes(String hex) {
   }
   final bytes = Uint8List(text.length ~/ 2);
   for (var index = 0; index < bytes.length; index++) {
-    final value = int.tryParse(text.substring(index * 2, index * 2 + 2), radix: 16);
+    final value = int.tryParse(
+      text.substring(index * 2, index * 2 + 2),
+      radix: 16,
+    );
     if (value == null) throw const FormatException('密钥格式无效');
     bytes[index] = value;
   }
   return bytes;
 }
 
-String _bytesToHex(List<int> bytes) => [
-  for (final byte in bytes) byte.toRadixString(16).padLeft(2, '0'),
-].join();
+String _bytesToHex(List<int> bytes) =>
+    [for (final byte in bytes) byte.toRadixString(16).padLeft(2, '0')].join();
 
 BigInt _bytesToBig(List<int> bytes) {
   var value = BigInt.zero;

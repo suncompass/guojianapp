@@ -944,15 +944,13 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   )
-                : Text(
-                    switch (_tab) {
-                      _tabFeed => '在看',
-                      _tabFollow => '追剧',
-                      _tabHistory => '历史',
-                      _tabDownloads => '下载',
-                      _ => appName,
-                    },
-                  ),
+                : Text(switch (_tab) {
+                    _tabFeed => '在看',
+                    _tabFollow => '追剧',
+                    _tabHistory => '历史',
+                    _tabDownloads => '下载',
+                    _ => appName,
+                  }),
             actions: [
               if (_selectionMode) ...[
                 TextButton(
@@ -973,8 +971,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   IconButton(
                     key: const ValueKey('feed-refresh'),
                     tooltip: '刷新动态',
-                    onPressed: () =>
-                        RecommendationService.current?.refresh(),
+                    onPressed: () => RecommendationService.current?.refresh(),
                     icon: const Icon(Icons.refresh_rounded),
                   ),
                 if (_tab == _tabFollow)
