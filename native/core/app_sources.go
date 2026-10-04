@@ -453,6 +453,13 @@ func (engine *nativeEngine) loadSourceCatalogCategory(ctx context.Context, sourc
 		if err := engine.loadSourceCatalogCategoryPage(ctx, source, category, 1); err != nil {
 			return err
 		}
+		engine.mu.Lock()
+		current, tracked := engine.catalogStates[key]
+		engine.mu.Unlock()
+		if !tracked || !current.HasMore {
+			return nil
+		}
+		tail = max(1, current.Page+1)
 	}
 	for loaded := 0; loaded < pages; loaded++ {
 		page := tail + loaded
