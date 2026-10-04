@@ -1,6 +1,22 @@
 # 红果鉴 / 真果鉴
 
-Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.2.90+2096（开发快照）**。
+Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.2.91+2097（开发快照）**。
+
+### 0.2.91：CI 首轮结果与三处测试失败修复
+
+推送 `2f02d47` / `dcdbfb6` / `8685080` 后，Actions 运行 `37188966356`（HEAD `86850801`）给出第一批真实反馈。一次 push 只产生一个 run，所以 0.2.88 / 0.2.89 / 0.2.90 三批都由这一个 run 覆盖，没有漏测。
+
+各 job 结果：`scripts` success（脚本测试在 CI 上全绿，确认本机那 2 项失败确实只是 NDK 自带 Python 的 `platform.uname` 环境问题）；`go` success；`android` 两版 success（Kotlin 的 Keystore 改动与 Go 核心都能编译，两个 APK 都产出）；`ios` 两个 success；`release` success（`scripts/publish_release.py` 端到端跑通，滚动 `latest` 已更新）；`dart` **failure**。
+
+拆 job 立刻见效：以前这几项共用一个 job，`dart` 一失败会把 `go` 一起挡掉，现在 `go` 的结果照常上报。`dart` job 内部 `dart format` 与 `dart analyze` 都通过，失败发生在 `flutter test`：251 通过、3 失败、3 跳过。新增的 `test/core_bridge_error_test.dart`、`test/downloads_polling_test.dart`、`test/nostr_validation_test.dart`、`test/nostr_relay_test.dart` 全部通过，即 BIP-340 验签、本地 WebSocket relay 加固与桥接分类报错都已由 CI 验证。
+
+三处失败与修复：
+
+- `test/feeds_screen_test.dart` 两项（底部导航入口、其他用户推荐入榜）失败在 “Pending timers”：widget 测试里未挂 mock 的 `duanju/device` 通道不会回包，`SecretStore._protect` 的 5 秒超时定时器一直挂着。现在这两个测试显式把通道 mock 成返回 null（等价于平台不支持安全存储），身份走明文回退，超时定时器也能正常取消。任何挂载首页的 widget 测试都要注意这一条。
+- `test/secret_store_test.dart` 的「预载是幂等的」失败在 `cached` 为 null：`initialize` 只从 `.secret` 密文键预载，而该用例只写了明文键；另外静态状态在用例之间没有重置。现在 setUp 里调用 `SecretStore.reset()`，用例改为先用假平台写入密文、再重启预载。
+- 清理新增代码带来的 4 条 analyzer info：两处多余的 `dart:typed_data` 导入、`_subscribe` 改用空感知元素 `?until`、`_onClosed` 的 `if` 补上花括号。
+
+`dart format` 在 CI 上通过这一条也修正了前面的判断：本机临时 WASM `dart_style` 报的那 5 个「未格式化」文件属于工具差异，不是仓库问题，上一轮把它们还原是对的。
 
 ### 0.2.90：检查拆分、镜像改写修复与后台轮询收尾
 
@@ -40,7 +56,7 @@ Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、�
 
 安全边界：榜单「N 人」实际按不同公钥身份去重，并非实名人数认证。验签可防止冒充别人的公钥，不能阻止同一人创建多个身份，也不能证明远端身份真的观看过视频；公钥与公开发布记录可被关联。下文旧版本「真实人数、不可刷」的描述不应作为安全保证。
 
-后续顺序：大剧库持久化与播放器状态整理（都需要工具链，或接受一轮 CI 迭代）；站源契约；README 顶部状态收敛。本轮未实施这些后续项。
+后续顺序：确认本轮修复在 CI 上转绿；大剧库持久化与播放器状态整理；站源契约；README 顶部状态收敛。本轮未实施这些后续项。
 
 0.2.86 按用户要求去掉 0.2.85 里自行添加、用户并未要求的「我发布了 N 部 · 多选删除」顶部提示行，多选删除只保留卡片菜单里的「管理我发布的记录」一个入口。
 

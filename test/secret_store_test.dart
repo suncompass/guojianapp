@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:duanju_app/recommendation_store.dart';
 import 'package:duanju_app/secret_store.dart';
@@ -56,6 +55,7 @@ void main() {
     preferences = await SharedPreferences.getInstance();
     store = RecommendationStore(preferences);
     platform = _FakePlatform();
+    SecretStore.reset();
     bind();
   });
 
@@ -165,10 +165,14 @@ void main() {
   });
 
   test('预载是幂等的，重复调用不改变结果', () async {
-    await preferences.setString(_identityKey, _secret);
-    await SecretStore.initialize(preferences);
-    await SecretStore.initialize(preferences);
+    await restart();
+    await store.setIdentity('default', _secret);
+    await restart();
     expect(SecretStore.ready, isTrue);
     expect(SecretStore.cached(_identityKey), _secret);
+
+    await SecretStore.initialize(preferences);
+    expect(SecretStore.cached(_identityKey), _secret);
+    expect(store.identity('default'), _secret);
   });
 }

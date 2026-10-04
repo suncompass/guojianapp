@@ -9,10 +9,13 @@ import 'package:duanju_app/recommendation_models.dart';
 import 'package:duanju_app/recommendation_service.dart';
 import 'package:duanju_app/secret_store.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'fixtures.dart';
+
+const _deviceChannel = MethodChannel('duanju/device');
 
 class _FakeRelay extends NostrRelayPool {
   _FakeRelay(
@@ -53,10 +56,16 @@ void main() {
     preferences = await SharedPreferences.getInstance();
     store = LocalStore(preferences);
     SecretStore.reset();
+    // 未挂 mock 的平台通道在 widget 测试里不会回包，会留下 5 秒超时定时器；
+    // 这里显式回 null，等价于「平台不支持安全存储」，身份走明文回退。
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_deviceChannel, (call) async => null);
     await SecretStore.initialize(preferences);
   });
 
   tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_deviceChannel, null);
     RecommendationService.current?.dispose();
     RecommendationService.current = null;
     store.dispose();

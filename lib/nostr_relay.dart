@@ -190,7 +190,7 @@ class _RelayLink {
         'kinds': [kind],
         '#d': [dTag],
         'limit': NostrRelayPool.subscriptionLimit,
-        if (until != null) 'until': until,
+        'until': ?until,
       },
     ]);
     if (round > 0 && identical(_subscriptions[id], subscription)) {
@@ -370,8 +370,9 @@ class _RelayLink {
     final webSocket = socket;
     socket = null;
     _clearSubscriptions();
-    if (webSocket != null)
+    if (webSocket != null) {
       unawaited(webSocket.close().catchError((Object _) {}));
+    }
     for (final completer in _pending.values) {
       if (!completer.isCompleted) completer.complete(false);
     }
