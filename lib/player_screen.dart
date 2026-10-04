@@ -174,6 +174,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       assert(false, '非法的播放状态迁移: $previous -> $next');
     }
   }
+
   VideoEnhancementController? get _enhancementForUi =>
       _enhancement.supported ? _enhancement : null;
   PlaybackPreferences get _preferences => PlaybackPreferences(
@@ -330,9 +331,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         }
         if (buffering == _buffering) return;
         setState(() {
-          _setPhase(
-            buffering ? PlaybackPhase.buffering : PlaybackPhase.ready,
-          );
+          _setPhase(buffering ? PlaybackPhase.buffering : PlaybackPhase.ready);
         });
       }),
     );

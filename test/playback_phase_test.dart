@@ -64,16 +64,19 @@ void main() {
       expect(machine.enter(PlaybackPhase.failed), isTrue);
     });
 
-    test('完整生命周期：opening -> ready -> buffering -> ready -> opening -> failed -> closed', () {
-      final machine = PlaybackPhaseMachine();
-      expect(machine.enter(PlaybackPhase.ready), isTrue);
-      expect(machine.enter(PlaybackPhase.buffering), isTrue);
-      expect(machine.enter(PlaybackPhase.ready), isTrue);
-      expect(machine.enter(PlaybackPhase.opening), isTrue);
-      expect(machine.enter(PlaybackPhase.failed), isTrue);
-      expect(machine.enter(PlaybackPhase.closed), isTrue);
-      expect(machine.isTerminal, isTrue);
-    });
+    test(
+      '完整生命周期：opening -> ready -> buffering -> ready -> opening -> failed -> closed',
+      () {
+        final machine = PlaybackPhaseMachine();
+        expect(machine.enter(PlaybackPhase.ready), isTrue);
+        expect(machine.enter(PlaybackPhase.buffering), isTrue);
+        expect(machine.enter(PlaybackPhase.ready), isTrue);
+        expect(machine.enter(PlaybackPhase.opening), isTrue);
+        expect(machine.enter(PlaybackPhase.failed), isTrue);
+        expect(machine.enter(PlaybackPhase.closed), isTrue);
+        expect(machine.isTerminal, isTrue);
+      },
+    );
 
     test('拒绝迁移不改变状态', () {
       final machine = PlaybackPhaseMachine();
