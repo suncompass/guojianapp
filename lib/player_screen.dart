@@ -22,6 +22,7 @@ import 'follow_state.dart';
 import 'local_store.dart';
 import 'models.dart';
 import 'playback_launch_screen.dart';
+import 'playback_phase.dart';
 import 'playback_loader.dart';
 import 'playback_preloader.dart';
 import 'playback_recovery.dart';
@@ -109,10 +110,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   late int _index;
   late final int _profileEpoch;
   int _openedIndex = -1;
+  final PlaybackPhaseMachine _phase = PlaybackPhaseMachine();
   int _generation = 0;
   int _requestedQuality = 0;
-  bool _loading = true;
-  bool _buffering = false;
   bool _forceOnline = false;
   bool _localFailure = false;
   bool _fullscreen = false;
@@ -122,7 +122,6 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _autoAdvance = true;
   bool? _systemFullscreen;
   Orientation? _lastOrientation;
-  bool _closed = false;
   bool _acceptErrors = false;
   bool _foreground = true;
   bool _playIntent = true;
@@ -161,6 +160,20 @@ class _PlayerScreenState extends State<PlayerScreen>
       !_television &&
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
+
+  // 播放生命周期由 _phase 状态机派生（0.2.95 收敛），保证
+  // loading / buffering / 失败 / 关闭互斥，且 failed 与 _error 非空对应。
+  bool get _loading => _phase.phase == PlaybackPhase.opening;
+  bool get _buffering => _phase.phase == PlaybackPhase.buffering;
+  bool get _closed => _phase.phase == PlaybackPhase.closed;
+
+  /// 确定性迁移：必须成功，否则说明调用点违反状态机约定。
+  void _setPhase(PlaybackPhase next) {
+    final previous = _phase.phase;
+    if (!_phase.enter(next)) {
+      assert(false, '非法的播放状态迁移: $previous -> $next');
+    }
+  }
   VideoEnhancementController? get _enhancementForUi =>
       _enhancement.supported ? _enhancement : null;
   PlaybackPreferences get _preferences => PlaybackPreferences(
@@ -309,8 +322,18 @@ class _PlayerScreenState extends State<PlayerScreen>
     _subscriptions.add(
       _player.stream.buffering.distinct().listen((buffering) {
         if (!mounted || _closed) return;
-        if (_buffering == buffering) return;
-        setState(() => _buffering = buffering);
+        final current = _phase.phase;
+        // opening 阶段由打开完成处统一落位；failed/closed 不再迁移。
+        if (current != PlaybackPhase.ready &&
+            current != PlaybackPhase.buffering) {
+          return;
+        }
+        if (buffering == _buffering) return;
+        setState(() {
+          _setPhase(
+            buffering ? PlaybackPhase.buffering : PlaybackPhase.ready,
+          );
+        });
       }),
     );
     _subscriptions.add(
@@ -403,7 +426,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       handoff?.fail('接收用户已变更，推送已取消');
       if (handoff != null)
         unawaited(widget.repository.release(handoff.plan.session));
-      _loading = false;
+      _setPhase(PlaybackPhase.failed);
       _error = '播放接收已取消';
     } else {
       _play(
@@ -953,7 +976,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       } catch (_) {}
       if (mounted && !_closed && ticket == _generation) {
         setState(() {
-          _loading = false;
+          _setPhase(PlaybackPhase.failed);
           _localFailure = current.local;
           _error = current.local
               ? widget.allowOnlineFallback
@@ -1087,7 +1110,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _showControlsOnPlaybackReady = showControlsOnReady;
     setState(() {
       _index = index;
-      _loading = true;
+      _setPhase(PlaybackPhase.opening);
       _error = null;
       _localFailure = false;
       _loadingMessage = switch (recoveryAction) {
@@ -1197,7 +1220,11 @@ class _PlayerScreenState extends State<PlayerScreen>
         await _interactions.applySpeed();
         if (mounted && !_closed && ticket == _generation) {
           setState(() {
-            _loading = false;
+            _setPhase(
+              _player.state.buffering
+                  ? PlaybackPhase.buffering
+                  : PlaybackPhase.ready,
+            );
           });
           _danmaku.setPlan(plan);
           _syncDanmaku();
@@ -1216,7 +1243,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           }
           if (mounted && !_closed && ticket == _generation) {
             setState(() {
-              _loading = false;
+              _setPhase(PlaybackPhase.failed);
               _localFailure =
                   (error is AppFailure && error.code == 'local_media') ||
                   (widget.localOnly && !_forceOnline);
@@ -1579,7 +1606,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   @override
   void dispose() {
-    _closed = true;
+    _setPhase(PlaybackPhase.closed);
     _screenAwake.disable();
     _routeAnimation?.removeStatusListener(_onRouteAnimationStatus);
     _routeAnimation = null;

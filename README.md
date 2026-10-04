@@ -1,6 +1,21 @@
 # 红果鉴 / 真果鉴
 
-Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.2.94+2100（开发快照）**。
+Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.2.95+2101（开发快照）**。
+
+### 0.2.95：播放器核心生命周期状态收敛
+
+- 问题：`_PlayerScreenState`（约 2500 行）用三个互相独立的布尔维护核心生命周期——`_loading`（打开一集中）、`_buffering`（缓冲中）、`_closed`（已销毁），失败态则隐含在 `_error != null` 里。四个信号没有约束关系，任何一处漏改都会出现「已关闭却还在缓冲」「既在打开又在报错」这类不可能状态，且编译器无法拦截。
+
+- 改动：新增 `lib/playback_phase.dart`，定义五态枚举 `PlaybackPhase { opening, ready, buffering, failed, closed }` 和带显式迁移表的 `PlaybackPhaseMachine`。`player_screen.dart` 里 `_loading` / `_buffering` / `_closed` 全部改为从 `_phase` 派生的 getter（约 80 处读取点零改动），7 处赋值点改为 `_setPhase(...)` 显式迁移：`_play` 进入 opening，打开成功按 `player.state.buffering` 落位 ready/buffering，打开失败与恢复停止进入 failed（与 `_error` 非空对应），dispose 进入 closed 终态。
+
+- 迁移表约束：opening 只能到 ready/buffering/failed/closed；ready 与 buffering 互相往返，也可 opening（换集）或 failed；failed 只能重开（opening）或关闭；closed 是终态。`enter` 返回是否接受，确定性迁移处用 `assert` 拦截非法调用，事件驱动的缓冲流监听对非 ready/buffering 阶段静默忽略（与旧代码里「失败后只改标志位」的行为等价）。
+
+- 语义保持：缓冲事件在 opening 阶段不迁移，打开完成时统一读取 `player.state.buffering` 落位，避免「缓冲中」文案盖过「正在准备播放」；UI 层（`_loading || _buffering` 的叠加判断、控件可用性、恢复流程的 `_acceptErrors` / `_pendingError` 门控）全部不变。
+
+- 新增 `test/playback_phase_test.dart`：9 项用例覆盖初始状态、全表迁移、ready↔buffering 往返、failed 拒绝直达 ready、closed 终态不可逆、重复进入幂等、拒绝不改状态与一条完整生命周期链。
+
+- 验证：本机无 Dart 工具链，编译与用例执行由 CI 的 `dart` job 覆盖（默认 + ALL_SOURCES 两个变体）。
+
 
 ### 0.2.94：大剧库保存移出引擎锁
 
