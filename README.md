@@ -1,6 +1,22 @@
 # 红果鉴 / 真果鉴
 
-Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.2.93+2099（开发快照）**。
+Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.2.94+2100（开发快照）**。
+
+### 0.2.94：大剧库保存移出引擎锁
+
+- 问题：`catalogs.json` 单文件最大 32 MiB，保存时把「整份 JSON 编码 + 临时文件写入 + fsync」全放在引擎锁 `engine.mu` 里做。手机上目录越大，每次分页保存占住全局锁的时间越长，期间目录读取、播放地址解析等请求只能排队。
+
+- 改动：`native/core/app_catalog_cache.go` 的 `writeCatalogDiskLocked` 先在锁内取一份完整快照，随后交还 `engine.mu`，在锁外编码与落盘，最后重新加锁提交结果。函数仍满足 `...Locked` 约定（返回时持有锁），因此 12 处调用点——目录分页、分类、封面回写、资料补齐、剧库导入、推荐、站源任务重试与剧库重试保存——都不用改。
+
+- 快照必须逐条复制元素：序列化期间其他路径会就地改内存（例如 `saveCoverAddress` 直接写 `items[index].Cover`），共享底层数组会变成数据竞争。`hongguoCatalog` 复用既有的 `cloneHongguoCatalogState`，推荐的 `Seen` 列表也单独复制。
+
+- 新增保存锁 `saveMu`：写盘必须串行，否则两个快照并发落盘时旧的那份可能后到，把磁盘内容写回旧版本。锁序只有「保存锁 → 引擎锁」，进入保存锁之前一定先交还引擎锁，不构成环；进入保存锁后也只做纯编码与文件写入。
+
+- 语义保持：保存仍在发起调用的 goroutine 内完成，失败原因照旧由本次调用返回、按原有文案上报；`deferCatalogSave`、保存失败重试、32 MiB 上限与 `sourceRecords` 的「等待保存 / 已保存」状态都不变，`TestNativeCatalogSaveFailureRetriesWithoutAdvancing`、`TestNativeCatalogSizeLimitPreservesPreviousFile`、`TestNativeCatalogDeferredSaveWritesOnce` 等继续覆盖。
+
+- 新增 `native/core/app_catalog_save_lock_test.go` 的 `TestNativeCatalogSaveLeavesEngineLockFree`：用测试钩子卡在「快照完成、开始编码」处，断言此时另一个 `nativeCached` 请求能立刻拿到引擎锁（旧实现要等写盘结束）。
+
+- 验证：本机仍无 Go 工具链，编译与用例执行由 CI 的 `go` job 覆盖（`-race` 与 ALL_SOURCES 两个变体）。
 
 ### 0.2.93：go job 随机红的根因与修复，dart 双变体转绿
 

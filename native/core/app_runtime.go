@@ -158,6 +158,9 @@ type nativeEngine struct {
 	downloader       *Downloader
 	directory        string
 	mu               sync.Mutex
+	// 保存锁与状态锁分开：编码 + 落盘最大要处理 32 MiB，不能在持 mu 时做。
+	// 它保证同一时刻只有一个写盘者，避免旧快照后落盘把磁盘写回旧版本。
+	saveMu           sync.Mutex
 	catalogs         map[string][]nativeDrama
 	catalogStates    map[string]nativeCatalogState
 	categoryOptions  map[string][]nativeCategory

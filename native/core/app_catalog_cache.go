@@ -248,25 +248,81 @@ func (engine *nativeEngine) saveCatalogCache(source string, result *nativeCatalo
 	return err
 }
 
+// 测试钩子：快照完成、开始编码之前调用。生产路径为 nil。
+var catalogSaveBeforeEncode func()
+
+// 写盘前的完整快照，必须在引擎锁内调用。
+//
+// 序列化在锁外进行，期间别的路径会就地改这些切片（例如 saveCoverAddress 直接写
+// items[index].Cover），所以这里逐条复制元素，不能让快照与内存共享底层数组。
+func (engine *nativeEngine) catalogDiskSnapshotLocked() nativeCatalogDisk {
+	catalogs := make(map[string][]nativeDrama, len(engine.catalogs))
+	for source, items := range engine.catalogs {
+		catalogs[source] = append([]nativeDrama(nil), items...)
+	}
+	states := make(map[string]nativeCatalogState, len(engine.catalogStates))
+	for key, state := range engine.catalogStates {
+		states[key] = state
+	}
+	categories := make(map[string][]nativeCategory, len(engine.categoryOptions))
+	for source, items := range engine.categoryOptions {
+		categories[source] = append([]nativeCategory(nil), items...)
+	}
+	recommendations := make(map[string]nativeRecommendationState, len(engine.recommendations))
+	for genre, state := range engine.recommendations {
+		state.Query.Seen = append([]string(nil), state.Query.Seen...)
+		recommendations[genre] = state
+	}
+	return nativeCatalogDisk{
+		Version:         3,
+		Catalogs:        catalogs,
+		States:          states,
+		Categories:      categories,
+		HongguoApp:      cloneHongguoCatalogState(engine.hongguoCatalog),
+		Recommendations: recommendations,
+	}
+}
+
+// 调用方按 ...Locked 约定持有引擎锁。这里先把锁交还、返回前再拿回来，于是编码与
+// 落盘（最大 32 MiB 加 fsync）期间目录、播放等请求不会被挡住；保存锁则保证写盘
+// 串行，磁盘不会因为旧快照晚到而回退。
 func (engine *nativeEngine) writeCatalogDiskLocked() error {
+	engine.mu.Unlock()
+	defer engine.mu.Lock()
+
+	engine.saveMu.Lock()
+	defer engine.saveMu.Unlock()
+
+	engine.mu.Lock()
 	if engine.deferCatalogSave {
 		engine.markCatalogSavePendingLocked()
+		engine.mu.Unlock()
 		return nil
 	}
-	body, err := json.Marshal(nativeCatalogDisk{Version: 3, Catalogs: engine.catalogs, States: engine.catalogStates, Categories: engine.categoryOptions, HongguoApp: engine.hongguoCatalog, Recommendations: engine.recommendations})
+	disk := engine.catalogDiskSnapshotLocked()
+	engine.mu.Unlock()
+
+	if catalogSaveBeforeEncode != nil {
+		catalogSaveBeforeEncode()
+	}
+	body, err := json.Marshal(disk)
 	if err == nil && len(body) > nativeCatalogMaxBytes {
 		err = errNativeCatalogLimit
 	}
 	if err == nil {
 		err = writeNativeCacheFile(filepath.Join(engine.directory, "catalogs.json"), body)
 	}
+
+	engine.mu.Lock()
 	engine.catalogSaveError = nativeSaveError("剧库", err)
 	if err == nil {
 		engine.finishCatalogSaveLocked()
 	} else {
 		engine.markCatalogSavePendingLocked()
 	}
-	return engine.catalogSaveError
+	saveError := engine.catalogSaveError
+	engine.mu.Unlock()
+	return saveError
 }
 
 func writeNativeCacheFile(path string, data []byte) error {
