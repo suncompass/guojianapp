@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:duanju_app/local_store.dart';
@@ -7,6 +8,7 @@ import 'package:duanju_app/nostr_relay.dart';
 import 'package:duanju_app/recommendation_models.dart';
 import 'package:duanju_app/recommendation_service.dart';
 import 'package:duanju_app/recommendation_store.dart';
+import 'package:duanju_app/secret_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -21,6 +23,7 @@ class _FakeRelay extends NostrRelayPool {
 
   final published = <NostrEvent>[];
   var accept = 1;
+  Completer<int>? response;
 
   @override
   void start({
@@ -34,6 +37,7 @@ class _FakeRelay extends NostrRelayPool {
   @override
   Future<int> publish(NostrEvent event) async {
     published.add(event);
+    if (response != null) return response!.future;
     return accept;
   }
 
@@ -77,6 +81,21 @@ WatchEntry _watch(
   updatedAt: DateTime.now(),
 );
 
+Future<void> until(bool Function() ready) async {
+  final watch = Stopwatch()..start();
+  while (!ready()) {
+    if (watch.elapsed > const Duration(seconds: 10)) {
+      fail('等待异步发布超时');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+}
+
+Future<void> settle(RecommendationService service, Duration delay) async {
+  await Future<void>.delayed(delay);
+  await until(() => !service.publishing);
+}
+
 void main() {
   late SharedPreferences preferences;
   late LocalStore store;
@@ -105,6 +124,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     preferences = await SharedPreferences.getInstance();
     store = LocalStore(preferences);
+    SecretStore.reset();
+    await SecretStore.initialize(preferences);
   });
 
   tearDown(() {
@@ -129,13 +150,93 @@ void main() {
     expect(again.shortIdentity, service.shortIdentity);
   });
 
+  test('旧会话的迟到事件和通知不能进入重新挂载的服务', () async {
+    final service = await attach();
+    final previous = relay;
+    service.detach();
+    service.attach(store);
+    previous.onEvent(
+      NostrIdentity.sign(
+        kind: recommendationKind,
+        createdAt: 1760000000,
+        tags: [
+          ['d', recommendationDTag],
+        ],
+        content: jsonEncode({
+          'v': 1,
+          'i': [
+            [
+              'hongguo',
+              'hongguo:old',
+              '迟到记录',
+              'https://example.com/a',
+              '都市',
+              1760000000,
+            ],
+          ],
+        }),
+        secretHex: NostrIdentity.generate().secretHex,
+      ),
+    );
+    previous.onNotice?.call('旧会话通知');
+    await settle(service, const Duration(milliseconds: 260));
+    expect(service.items, isEmpty);
+    expect(service.notice, isNot('旧会话通知'));
+  });
+
+  test('发布确认期间删除记录会补发新快照', () async {
+    final service = await attach();
+    final acknowledgement = Completer<int>();
+    relay.response = acknowledgement;
+    final drama = _drama();
+    for (var episode = 1; episode <= 5; episode++) {
+      service.observe(_watch(drama, episode: episode, position: 60));
+    }
+    await until(() => relay.published.isNotEmpty);
+    await service.remove(drama.id);
+    // 让第二次发布计时器在第一次确认之前触发，验证 busy 不会吞掉新版本。
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    acknowledgement.complete(1);
+    relay.response = null;
+    await until(() => relay.published.length >= 2 && !service.publishing);
+    expect(relay.lastVector()!.items, isEmpty);
+    expect(service.myCount, 0);
+    expect(service.pendingPublish, isFalse);
+  });
+
+  test('身份记录解不开时不会新建身份', () async {
+    // 上一次启动已把明文清掉，但本平台解不开密文：此时必须保持无身份，
+    // 否则新身份会顶掉 relay 上已有记录的管理入口。
+    await preferences.setString(
+      'recommend.v1.default.identity.secret',
+      base64Encode(utf8.encode('sealed-but-unreadable')),
+    );
+    SecretStore.reset();
+    await SecretStore.initialize(preferences);
+
+    final service = await attach();
+    expect(service.shortIdentity, '未就绪');
+    expect(service.publicKey, isEmpty);
+    expect(service.notice, isNotEmpty);
+    expect(service.items, isEmpty);
+    expect(
+      RecommendationStore(preferences).hasStoredIdentity('default'),
+      isTrue,
+    );
+    expect(
+      preferences.getString('recommend.v1.default.identity'),
+      isNull,
+      reason: '不能为了恢复身份而回写明文',
+    );
+  });
+
   test('累计观看不足时不会发布', () async {
     final service = await attach();
     final drama = _drama();
     for (var second = 5; second <= 60; second += 5) {
       service.observe(_watch(drama, episode: 1, position: second.toDouble()));
     }
-    await Future<void>.delayed(const Duration(milliseconds: 80));
+    await settle(service, const Duration(milliseconds: 80));
     expect(relay.published, isEmpty);
     expect(service.myCount, 0);
   });
@@ -149,7 +250,7 @@ void main() {
         _watch(drama, episode: 1, position: second.toDouble(), duration: 3600),
       );
     }
-    await Future<void>.delayed(const Duration(milliseconds: 160));
+    await settle(service, const Duration(milliseconds: 160));
     expect(service.myCount, 1);
     expect(relay.published, hasLength(1));
     final vector = relay.lastVector();
@@ -167,7 +268,7 @@ void main() {
     for (var episode = 1; episode <= 5; episode++) {
       service.observe(_watch(drama, episode: episode, position: 60));
     }
-    await Future<void>.delayed(const Duration(milliseconds: 160));
+    await settle(service, const Duration(milliseconds: 160));
     expect(service.myCount, 1);
   });
 
@@ -177,11 +278,11 @@ void main() {
     for (var episode = 1; episode <= 5; episode++) {
       service.observe(_watch(drama, episode: episode, position: 60));
     }
-    await Future<void>.delayed(const Duration(milliseconds: 160));
+    await settle(service, const Duration(milliseconds: 160));
     expect(service.items, hasLength(1));
 
     await service.remove(drama.id);
-    await Future<void>.delayed(const Duration(milliseconds: 160));
+    await settle(service, const Duration(milliseconds: 160));
     expect(service.myCount, 0);
     expect(service.items, isEmpty);
     expect(relay.lastVector()!.items, isEmpty);
@@ -189,7 +290,7 @@ void main() {
 
     // 重新看一集不足以再次发布
     service.observe(_watch(drama, episode: 1, position: 60));
-    await Future<void>.delayed(const Duration(milliseconds: 120));
+    await settle(service, const Duration(milliseconds: 120));
     expect(service.myCount, 0);
   });
 
@@ -203,7 +304,7 @@ void main() {
         service.observe(_watch(drama, episode: episode, position: 60));
       }
     }
-    await Future<void>.delayed(const Duration(milliseconds: 200));
+    await settle(service, const Duration(milliseconds: 200));
     expect(service.myCount, 3);
     expect(service.myEntries.map((entry) => entry.id), [
       'hongguo:3',
@@ -212,7 +313,7 @@ void main() {
     ]);
 
     await service.removeMany([first.id, third.id]);
-    await Future<void>.delayed(const Duration(milliseconds: 200));
+    await settle(service, const Duration(milliseconds: 200));
     expect(service.myCount, 1);
     expect(service.myEntries.single.id, second.id);
     final vector = relay.lastVector();
@@ -223,7 +324,7 @@ void main() {
 
     // 被删除的剧重新看一集不足以再次发布，未删除的仍然保留。
     service.observe(_watch(first, episode: 1, position: 60));
-    await Future<void>.delayed(const Duration(milliseconds: 120));
+    await settle(service, const Duration(milliseconds: 120));
     expect(service.myEntries.single.id, second.id);
   });
 
@@ -233,12 +334,12 @@ void main() {
     for (var episode = 1; episode <= 5; episode++) {
       service.observe(_watch(drama, episode: episode, position: 60));
     }
-    await Future<void>.delayed(const Duration(milliseconds: 160));
+    await settle(service, const Duration(milliseconds: 160));
     final published = relay.published.length;
 
     await service.removeMany(const <String>[]);
     await service.removeMany(['hongguo:missing', '']);
-    await Future<void>.delayed(const Duration(milliseconds: 160));
+    await settle(service, const Duration(milliseconds: 160));
     expect(service.myCount, 1);
     expect(relay.published, hasLength(published));
   });
@@ -249,7 +350,7 @@ void main() {
     for (var episode = 1; episode <= 5; episode++) {
       service.observe(_watch(drama, episode: episode, position: 60));
     }
-    await Future<void>.delayed(const Duration(milliseconds: 160));
+    await settle(service, const Duration(milliseconds: 160));
     expect(service.items, hasLength(1));
     await service.hide(drama.id);
     expect(service.items, isEmpty);
@@ -265,7 +366,7 @@ void main() {
     for (var episode = 1; episode <= 5; episode++) {
       service.observe(_watch(drama, episode: episode, position: 60));
     }
-    await Future<void>.delayed(const Duration(milliseconds: 160));
+    await settle(service, const Duration(milliseconds: 160));
     expect(service.items, hasLength(1));
     expect(service.pendingPublish, isTrue);
     expect(service.notice, isNotEmpty);
@@ -296,7 +397,7 @@ void main() {
       secretHex: other.secretHex,
     );
     relay.onEvent(event);
-    await Future<void>.delayed(const Duration(milliseconds: 260));
+    await settle(service, const Duration(milliseconds: 260));
     expect(service.items, hasLength(1));
     expect(service.items.single.title, '别人的推荐');
     expect(service.items.single.mine, isFalse);
@@ -304,7 +405,7 @@ void main() {
 
     // 同一事件重复到达不会重复计数
     relay.onEvent(event);
-    await Future<void>.delayed(const Duration(milliseconds: 260));
+    await settle(service, const Duration(milliseconds: 260));
     expect(service.items.single.recommenders, 1);
   });
 
@@ -344,7 +445,7 @@ void main() {
       secretHex: other.secretHex,
     );
     relay.onEvent(event);
-    await Future<void>.delayed(const Duration(milliseconds: 260));
+    await settle(service, const Duration(milliseconds: 260));
     expect(
       service.sourceChoices.map((row) => row.id),
       containsAll(<String>[recommendationAllSources, 'hongguo']),
@@ -397,7 +498,7 @@ void main() {
         sig: 'b' * 128,
       ),
     );
-    await Future<void>.delayed(const Duration(milliseconds: 260));
+    await settle(service, const Duration(milliseconds: 260));
     expect(service.allItems.any((row) => row.title == '验证用剧名'), isFalse);
     expect(service.items, isEmpty);
 
@@ -435,7 +536,7 @@ void main() {
         secretHex: other.secretHex,
       ),
     );
-    await Future<void>.delayed(const Duration(milliseconds: 260));
+    await settle(service, const Duration(milliseconds: 260));
     expect(service.items, hasLength(1));
     expect(service.items.single.publishers, {other.publicKey});
 
@@ -482,7 +583,7 @@ void main() {
         ),
       );
     }
-    await Future<void>.delayed(const Duration(milliseconds: 260));
+    await settle(service, const Duration(milliseconds: 260));
     expect(service.items, hasLength(used.length));
 
     final first = used.first;

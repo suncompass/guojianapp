@@ -7,6 +7,7 @@ import 'package:duanju_app/nostr_crypto.dart';
 import 'package:duanju_app/nostr_relay.dart';
 import 'package:duanju_app/recommendation_models.dart';
 import 'package:duanju_app/recommendation_service.dart';
+import 'package:duanju_app/secret_store.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -51,6 +52,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     preferences = await SharedPreferences.getInstance();
     store = LocalStore(preferences);
+    SecretStore.reset();
+    await SecretStore.initialize(preferences);
   });
 
   tearDown(() {

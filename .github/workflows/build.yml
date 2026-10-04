@@ -199,51 +199,26 @@ jobs:
   #   - 打 tag  -> 发布以该 tag 命名的版本（例如 0.2），打出来的 apk / ios 包作为附件
   #   - 推分支/手动触发 -> 更新滚动版本 latest，保证 Releases 页永远有最新安装包
   release:
-    needs: android
-    if: github.event_name != 'pull_request'
+    # 等待 iOS 产物落定，但 iOS 失败不妨碍发布已经成功的 Android 包。
+    needs: [android, ios]
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && needs.android.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    concurrency:
+      group: release-${{ github.repository }}-${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-      - name: 收集安装包
-        run: |
-          mkdir -p release
-          find artifacts -type f \( -name '*.apk' -o -name '*.zip' -o -name '*.ipa' \) \
-            -exec cp {} release/ \;
-          ls -l release
-      - name: 发布 / 更新 Release
+      - name: 校验新附件后发布 / 更新 Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            tag="$GITHUB_REF_NAME"
-            title="$GITHUB_REF_NAME"
-            target=""
-          else
-            tag="latest"
-            title="最新构建 ${GITHUB_SHA:0:7}"
-            target="--target $GITHUB_SHA"
-          fi
-          notes="由 CI 自动发布 · 提交 ${GITHUB_SHA:0:7} · $(date -u '+%Y-%m-%d %H:%M') UTC"
-
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            # 先清掉旧附件，避免版本号变化后同一个 Release 里堆积过期的安装包
-            for name in $(gh release view "$tag" --repo "$GITHUB_REPOSITORY" \
-                --json assets --jq '.assets[].name'); do
-              gh release delete-asset "$tag" "$name" --repo "$GITHUB_REPOSITORY" --yes
-            done
-            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" \
-              --title "$title" --notes "$notes"
-            gh release upload "$tag" release/* --repo "$GITHUB_REPOSITORY"
-          else
-            gh release create "$tag" release/* \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$title" \
-              --notes "$notes" \
-              $target
-          fi
+          IOS_RESULT: ${{ needs.ios.result }}
+        run: python3 scripts/publish_release.py

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'recommendation_models.dart';
+import 'secret_store.dart';
 
 /// 一部剧在本机的观看累计，用于判断「看过了」是否可以自动进入动态。
 class RecommendationWatch {
@@ -95,16 +96,47 @@ class RecommendationStore {
 
   String _key(String profile, String name) => '$prefix.$profile.$name';
 
+  static bool _validSecret(String? value) =>
+      value != null && RegExp(r'^[0-9a-f]{64}$').hasMatch(value);
+
+  /// 明文记录优先：它只在密文能被跨进程解出同一内容后才会被清除，
+  /// 因此两者同时存在时以它为准，避免把身份换成解不开的版本。
   String? identity(String profile) {
-    final value = preferences.getString(_key(profile, identities));
-    if (value == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(value)) {
-      return null;
-    }
-    return value;
+    final key = _key(profile, identities);
+    final legacy = preferences.getString(key);
+    if (_validSecret(legacy)) return legacy;
+    final secure = SecretStore.cached(key);
+    return _validSecret(secure) ? secure : null;
   }
 
-  Future<void> setIdentity(String profile, String secret) =>
-      preferences.setString(_key(profile, identities), secret);
+  /// 本机是否已有身份记录（明文或密文），用于避免解密失败时误建新身份。
+  bool hasStoredIdentity(String profile) {
+    final key = _key(profile, identities);
+    return preferences.getString(key) != null ||
+        preferences.getString('$key${SecretStore.suffix}') != null;
+  }
+
+  /// 写入身份：尽力落到系统安全存储，同时保留明文到下一次启动复核。
+  Future<void> setIdentity(String profile, String secret) async {
+    final key = _key(profile, identities);
+    await SecretStore.write(preferences, key, secret);
+    await preferences.setString(key, secret);
+  }
+
+  /// 迁移已有的明文身份，并在确认密文可跨进程解出同一内容后清除明文。
+  Future<void> upgradeIdentity(String profile) async {
+    final key = _key(profile, identities);
+    final legacy = preferences.getString(key);
+    if (!_validSecret(legacy)) return;
+    if (SecretStore.cached(key) == legacy) {
+      await preferences.remove(key);
+      return;
+    }
+    // 已有密文却解不开时保留明文，也不再反复重写，等平台恢复后由下次启动复核。
+    if (preferences.getString('$key${SecretStore.suffix}') == null) {
+      await SecretStore.write(preferences, key, legacy!);
+    }
+  }
 
   List<RecommendationEntry> items(String profile) {
     final raw = preferences.getString(_key(profile, itemKey));

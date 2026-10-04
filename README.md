@@ -1,6 +1,29 @@
 # 红果鉴 / 真果鉴
 
-Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.2.86+2092（开发快照）**。
+Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.2.88+2094（开发快照）**。
+
+### 0.2.88：推荐身份改用系统安全存储
+
+- 本轮本机检查：`scripts` 全量 28 项里 24 项通过、1 项跳过；仍失败的 3 项是既有的 `test_app_build` 两项（NDK 自带 Python 的 `platform.uname` 在该环境不可用）与 `test_build_mirrors` 一项（用例期望的 lock 镜像地址与当前 `pubspec.lock` 不一致），与本次改动无关；上一批新增的 `test_publish_release.py` 10 项全部通过。
+
+- 推荐身份的私钥不再以明文长期保存在本机偏好里。Android 走 Keystore 生成的 AES-GCM 密钥，Windows 走 DPAPI；两端都只把密文交给 Dart，`duanju/device` 通道新增 `protectSecret` / `unprotectSecret`，密文仍存回原来的 `recommend.v1.<用户>.identity.secret` 键，因此没有新依赖、新权限，也不改动备份与局域网同步格式（该命名空间本就排除在快照之外）。iOS 按平台优先级排在最后，本轮未接入，未接入时维持原有明文行为。
+- 迁移分两步，宁可慢一次也不丢身份：先按明文读取并写入密文，明文保留到**下一次启动仍能解出同一内容**才清除；已有密文却解不开时保留明文且不再反复重写，等平台恢复后由下次启动复核。密文在但本次解不开时**不新建身份**，只提示「本机推荐身份暂时无法读取」，避免新身份顶掉 relay 上已有记录的管理入口。
+- 兜底原则：通道未实现（`MissingPluginException`）、返回空、超时或密文编码损坏一律按「平台不支持」处理，退回原有明文路径并停止重试。加密不可用不等于身份不可用。
+- 验证：新增 `test/secret_store_test.dart`，覆盖平台不支持时退回明文、跨进程确认后才清除明文、解不开时保留记录标记、损坏密文不影响明文回退、换身份覆盖密文、删除用户清理密文与预载幂等；`test/recommendation_service_test.dart` 新增「身份记录解不开时不新建身份」用例，并在涉及的两个测试文件里改为先预载再挂载。Dart 侧仍用临时 WASM `dart_style` 按 `3.12.0` 解析与格式整理。本机没有 Dart/Flutter、Android 与 iOS 工具链，Kotlin / C++ 改动、Flutter 测试、Android 与 Windows 构建以及真机加解密都待 CI 与集中验收。
+- 已知限制：密文长期解不开时该用户只能浏览别人的榜单、无法发布，本轮只给提示，尚未提供显式的「重新生成身份」入口；Windows 的 DPAPI 只防离线或跨用户读取，不防同一用户下的进程读取。
+
+### 0.2.87：优化计划第一批（安全与发布）
+
+- 「在看」生产接收入口先检查消息大小、字段类型、十六进制长度、标签数量、订阅 ID 与最多 5 分钟未来时差，再在后台 isolate 核对事件 ID 和 BIP-340 签名；只有通过验证的事件才能交给推荐服务。每个 relay 验签串行排队，等待队列限制 512 条 / 8 MiB，超限断开并退避重连。EOSE 排在此前事件验证之后，旧订阅、重复 EOSE 和关闭后的迟到事件不能推进当前订阅；有效空列表仍支持撤回自己的发布。
+- 发布签名移到后台 isolate，使用会话代次和本地变更版本隔离迟到结果；签名或确认期间删除记录后会补发最新快照。重新挂载、切换用户或销毁服务后，旧 relay 回调与签名结果不再修改当前状态。本轮不更换身份、不迁移私钥；Android / iOS / Windows 安全存储迁移单独实施，避免丢失原发布身份。
+- Release 等待 Android、iOS 两个出包 job 结束，iOS 失败不阻塞成功的 Android 发布；checks 仍独立且不阻塞出包。新增 `scripts/publish_release.py`：附件使用提交号、运行编号与尝试次数区分构建，先上传全部新附件并核对 GitHub 返回的大小与 SHA-256，再更新发布信息和清理旧附件；失败保留旧下载，新 Release 在核对完成前保持草稿。滚动 `latest` 同步更新 tag，附件包含构建清单与校验和。
+- 本轮验证：使用已安装 Android NDK 自带 Python 执行发布流程模拟测试，10 项通过，覆盖中断、缺失摘要、名称冲突、重复执行、双 Android 版本与 iOS 产物收集；`git diff --check` 通过。新增 BIP-340 官方 0–14 号 32 字节消息测试向量、事件篡改与边界测试、本机 WebSocket relay 测试，以及发布期间修改记录 / 旧会话回调回归。本机未安装 Dart/Flutter，Dart 分析、测试及 Android/iOS 构建与设备行为均待 CI / 集中验收，未进行真实 relay 发布或站源媒体请求。
+
+格式补充：6 个变更 Dart 文件已使用临时目录内的轻量 WASM `dart_style` 格式器（语言版本 `3.12.0`）完成解析与格式整理；没有安装 Dart/Flutter SDK，也没有新增项目依赖。此检查不替代 Dart 类型分析、Flutter 测试或 CI 的格式复核。
+
+安全边界：榜单「N 人」实际按不同公钥身份去重，并非实名人数认证。验签可防止冒充别人的公钥，不能阻止同一人创建多个身份，也不能证明远端身份真的观看过视频；公钥与公开发布记录可被关联。下文旧版本「真实人数、不可刷」的描述不应作为安全保证。
+
+后续顺序：桥接解析减负与下载按需刷新；大剧库持久化与播放器状态整理；站源契约、文档和平台收敛。本轮未实施这些后续项。
 
 0.2.86 按用户要求去掉 0.2.85 里自行添加、用户并未要求的「我发布了 N 部 · 多选删除」顶部提示行，多选删除只保留卡片菜单里的「管理我发布的记录」一个入口。
 
@@ -942,15 +965,17 @@ SR-1、SR-2 与 SR-4 已接入源码，小型动漫 CNN 也包含在本轮；SR-
 
 将 `guoapp` 源码发布到仓库根目录，保留 `.github`、锁文件、`native` 和平台工程；不用上传 SDK、依赖目录、SO、DLL 或缓存。
 
-推送 `main` / `master`、`v*` 标签、提交 PR，或手动运行 **Build app packages**，会先检查再构建：
+推送 `main` / `master`、任意标签、提交 PR，或手动运行 **Build app packages**，会独立执行检查与构建；checks 失败不阻塞出包：
 
 | 红果版 Artifact | 全站源版 Artifact | 内容 |
 | --- | --- | --- |
 | `hongguojian-android` | `zhenguojian-android` | 三种架构 APK 和 SHA256 |
-| `hongguojian-windows` | `zhenguojian-windows` | 完整 ZIP 和 SHA256；从解压包检查原生核心、FFprobe、换封装及播放器启动 |
+| `hongguojian-windows` | `zhenguojian-windows` | Windows job 暂时注释，当前 CI 不出 Windows 包；构建脚本保留 |
 | `hongguojian-ios-unsigned` | `zhenguojian-ios-unsigned` | 未签名 `.app` ZIP 和 SHA256，不能直接当已签名 IPA 安装 |
 
-Actions 分别传入默认参数与 `--all-sources` 构建两版，Flutter 和 Go 回归也覆盖两种编译配置。产物保留 14 天，不自动创建 GitHub Release。首次平台构建结果以实际 Actions 输出为准。
+Actions 分别传入默认参数与 `--all-sources` 构建两版，Flutter 和 Go 回归也覆盖两种编译配置。Artifact 保留 14 天。PR 不发布 Release；其余运行在两版 Android 构建成功且 iOS job 结束后发布，标签构建更新对应版本，分支或手动构建更新 `latest`。iOS 允许失败，仅收录已上传的 iOS 包。
+
+发布由 `scripts/publish_release.py` 执行，同一 Release 串行更新。安装包文件名追加提交号、运行编号与尝试次数，避免覆盖仍可下载的旧文件；附构建清单和 SHA256SUMS。新附件全部通过大小和服务端 SHA-256 核对后才清理旧附件；缺摘要、上传中断或核对失败时保留旧包。构建成功不代表 checks 或设备验收通过，实际结果见对应 workflow。
 
 Android 正式发布持续使用同一签名并递增构建号，在仓库 Secrets 配置：
 

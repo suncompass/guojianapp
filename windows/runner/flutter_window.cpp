@@ -1,9 +1,65 @@
 #include "flutter_window.h"
 
+#include <windows.h>
+
+#include <dpapi.h>
+
 #include <optional>
+#include <vector>
 #include <flutter/standard_method_codec.h>
 
 #include "flutter/generated_plugin_registrant.h"
+
+namespace {
+
+// DPAPI 只把密文交给 Dart，存放位置仍由 SharedPreferences 决定。
+// 这里的失败必须回传空值，让 Dart 退回原有明文路径，而不是让身份变成不可用。
+std::optional<std::vector<uint8_t>> ProtectSecret(const std::string& value) {
+  DATA_BLOB input{};
+  input.cbData = static_cast<DWORD>(value.size());
+  input.pbData = reinterpret_cast<BYTE*>(const_cast<char*>(value.data()));
+  DATA_BLOB output{};
+  if (!CryptProtectData(&input, L"duanju.secret.v1", nullptr, nullptr, nullptr, 0,
+                        &output)) {
+    return std::nullopt;
+  }
+  std::vector<uint8_t> blob(output.pbData, output.pbData + output.cbData);
+  LocalFree(output.pbData);
+  return blob;
+}
+
+std::optional<std::string> UnprotectSecret(const std::vector<uint8_t>& blob) {
+  if (blob.empty()) {
+    return std::nullopt;
+  }
+  DATA_BLOB input{};
+  input.cbData = static_cast<DWORD>(blob.size());
+  input.pbData = reinterpret_cast<BYTE*>(const_cast<uint8_t*>(blob.data()));
+  DATA_BLOB output{};
+  if (!CryptUnprotectData(&input, nullptr, nullptr, nullptr, nullptr, 0,
+                          &output)) {
+    return std::nullopt;
+  }
+  std::string value(reinterpret_cast<const char*>(output.pbData),
+                    output.cbData);
+  LocalFree(output.pbData);
+  return value;
+}
+
+const flutter::EncodableValue* SecretArgument(
+    const flutter::EncodableValue* arguments, const char* name) {
+  if (arguments == nullptr) {
+    return nullptr;
+  }
+  const auto* map = std::get_if<flutter::EncodableMap>(arguments);
+  if (map == nullptr) {
+    return nullptr;
+  }
+  const auto entry = map->find(flutter::EncodableValue(name));
+  return entry == map->end() ? nullptr : &entry->second;
+}
+
+}  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -33,6 +89,30 @@ bool FlutterWindow::OnCreate() {
   device_channel_->SetMethodCallHandler(
       [](const flutter::MethodCall<flutter::EncodableValue>& call,
          std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+        if (call.method_name() == "protectSecret") {
+          const auto* value = SecretArgument(call.arguments(), "value");
+          if (value == nullptr || !std::holds_alternative<std::string>(*value)) {
+            result->Error("invalid_secret", "缺少待保护的内容");
+            return;
+          }
+          const auto blob = ProtectSecret(std::get<std::string>(*value));
+          result->Success(blob ? flutter::EncodableValue(*blob)
+                               : flutter::EncodableValue());
+          return;
+        }
+        if (call.method_name() == "unprotectSecret") {
+          const auto* blob = SecretArgument(call.arguments(), "blob");
+          if (blob == nullptr ||
+              !std::holds_alternative<std::vector<uint8_t>>(*blob)) {
+            result->Error("invalid_secret", "缺少待解密的内容");
+            return;
+          }
+          const auto value =
+              UnprotectSecret(std::get<std::vector<uint8_t>>(*blob));
+          result->Success(value ? flutter::EncodableValue(*value)
+                                : flutter::EncodableValue());
+          return;
+        }
         if (call.method_name() != "playbackPower") {
           result->NotImplemented();
           return;

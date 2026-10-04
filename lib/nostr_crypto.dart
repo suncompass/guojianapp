@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -57,25 +58,57 @@ class NostrEvent {
     return null;
   }
 
-  static NostrEvent? fromRelay(Object? raw) {
+  static const maxContentBytes = 512 * 1024;
+  static const maxTags = 32;
+  static const maxTagValues = 8;
+  static const maxTagValueLength = 2048;
+  static const futureToleranceSeconds = 5 * 60;
+
+  // 这里只做廉价边界检查；签名必须在交给业务层之前另行验证。
+  static NostrEvent? fromRelay(Object? raw, {int? nowSeconds}) {
     if (raw is! Map) return null;
-    final tags = <List<String>>[];
-    final rawTags = raw['tags'];
-    if (rawTags is List) {
-      for (final row in rawTags) {
-        if (row is List) tags.add([for (final value in row) '$value']);
-      }
-    }
+    final id = raw['id'];
+    final pubkey = raw['pubkey'];
+    final sig = raw['sig'];
+    final content = raw['content'];
     final createdAt = raw['created_at'];
     final kind = raw['kind'];
+    final rawTags = raw['tags'];
+    final now = nowSeconds ?? DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    if (!_isHex(id, 64) || !_isHex(pubkey, 64) || !_isHex(sig, 128)) {
+      return null;
+    }
+    if (createdAt is! int ||
+        createdAt <= 0 ||
+        createdAt > now + futureToleranceSeconds ||
+        kind is! int ||
+        kind < 0 ||
+        kind > 65535 ||
+        content is! String ||
+        content.length > maxContentBytes ||
+        utf8.encode(content).length > maxContentBytes ||
+        rawTags is! List ||
+        rawTags.length > maxTags) {
+      return null;
+    }
+    final tags = <List<String>>[];
+    for (final row in rawTags) {
+      if (row is! List || row.isEmpty || row.length > maxTagValues) return null;
+      final tag = <String>[];
+      for (final value in row) {
+        if (value is! String || value.length > maxTagValueLength) return null;
+        tag.add(value);
+      }
+      tags.add(List<String>.unmodifiable(tag));
+    }
     return NostrEvent(
-      id: '${raw['id'] ?? ''}',
-      pubkey: '${raw['pubkey'] ?? ''}',
-      createdAt: createdAt is num ? createdAt.toInt() : 0,
-      kind: kind is num ? kind.toInt() : 0,
-      tags: tags,
-      content: '${raw['content'] ?? ''}',
-      sig: '${raw['sig'] ?? ''}',
+      id: id as String,
+      pubkey: pubkey as String,
+      createdAt: createdAt,
+      kind: kind,
+      tags: List<List<String>>.unmodifiable(tags),
+      content: content,
+      sig: sig as String,
     );
   }
 }
@@ -105,6 +138,22 @@ class NostrIdentity {
     final point = _multiplyGenerator(secret);
     return _bytesToHex(_bigToBytes(point.x));
   }
+
+  static Future<NostrEvent> signAsync({
+    required int kind,
+    required int createdAt,
+    required List<List<String>> tags,
+    required String content,
+    required String secretHex,
+  }) => Isolate.run(
+    () => sign(
+      kind: kind,
+      createdAt: createdAt,
+      tags: tags,
+      content: content,
+      secretHex: secretHex,
+    ),
+  );
 
   static NostrEvent sign({
     required int kind,
@@ -153,6 +202,71 @@ String eventId({
   return _bytesToHex(
     Uint8List.fromList(sha256.convert(utf8.encode(serialized)).bytes),
   );
+}
+
+final _hexPattern = RegExp(r'^[0-9a-f]+$');
+
+bool _isHex(Object? value, int length) =>
+    value is String && value.length == length && _hexPattern.hasMatch(value);
+
+Future<bool> verifyNostrEventAsync(NostrEvent event) =>
+    Isolate.run(() => verifyNostrEvent(event));
+
+bool verifyNostrEvent(NostrEvent event, {int? nowSeconds}) {
+  if (NostrEvent.fromRelay(event.toJson(), nowSeconds: nowSeconds) == null) {
+    return false;
+  }
+  if (event.id !=
+      eventId(
+        pubkey: event.pubkey,
+        createdAt: event.createdAt,
+        kind: event.kind,
+        tags: event.tags,
+        content: event.content,
+      )) {
+    return false;
+  }
+  return verifySchnorrSignature(
+    publicKey: event.pubkey,
+    message: event.id,
+    signature: event.sig,
+  );
+}
+
+/// BIP-340 的 x-only 公钥验证：lift_x 取偶数 y，R = sG - eP。
+/// r、s 越界、无曲线点、无穷远点与奇数 y 都必须拒绝，不能取模后接受。
+bool verifySchnorrSignature({
+  required String publicKey,
+  required String message,
+  required String signature,
+}) {
+  if (!_isHex(publicKey, 64) ||
+      !_isHex(message, 64) ||
+      !_isHex(signature, 128)) {
+    return false;
+  }
+  final x = BigInt.parse(publicKey, radix: 16);
+  final r = BigInt.parse(signature.substring(0, 64), radix: 16);
+  final s = BigInt.parse(signature.substring(64), radix: 16);
+  if (x >= _prime || r >= _prime || s >= _order) return false;
+  final squaredY = _mod(x * x * x + BigInt.from(7));
+  var y = squaredY.modPow((_prime + BigInt.one) >> 2, _prime);
+  if (_mod(y * y) != squaredY) return false;
+  if (y.isOdd) y = _prime - y;
+  final challenge =
+      _bytesToBig(
+        _taggedHash('BIP0340/challenge', [
+          ..._bigToBytes(r),
+          ..._bigToBytes(x),
+          ..._hexToBytes(message),
+        ]),
+      ) %
+      _order;
+  final result = _add(
+    _multiply(_Point(_generatorX, _generatorY), s),
+    _multiply(_Point(x, y), (_order - challenge) % _order),
+  );
+  return result != null && result.y.isEven && result.x == r;
 }
 
 BigInt _parseSecret(String secretHex) {

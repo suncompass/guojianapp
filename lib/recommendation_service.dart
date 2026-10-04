@@ -11,6 +11,7 @@ import 'nostr_crypto.dart';
 import 'nostr_relay.dart';
 import 'recommendation_models.dart';
 import 'recommendation_store.dart';
+import 'secret_store.dart';
 
 /// 动态页连接的 relay 列表，与 `../nostr` 使用同一组公共 relay。
 const List<String> recommendationRelays = [
@@ -112,6 +113,9 @@ class RecommendationService extends ChangeNotifier {
   Timer? _watchTimer;
   Timer? _rebuildTimer;
   bool _watchDirty = false;
+  bool _disposed = false;
+  int _session = 0;
+  int _publishRevision = 0;
 
   bool get attached => _attached;
   String get profile => _profile;
@@ -147,6 +151,16 @@ class RecommendationService extends ChangeNotifier {
   List<CatalogCategory> get categoryFilters => _categoryChoices;
 
   void attach(LocalStore store) {
+    if (_disposed) return;
+    if (!SecretStore.ready) {
+      // 安全存储尚未预载，无法判断本机是否已有身份，先完成预载再挂载。
+      unawaited(
+        SecretStore.initialize(store.preferences).then((_) {
+          if (!_disposed) attach(store);
+        }),
+      );
+      return;
+    }
     if (_attached && identical(_local, store) && _profile == store.profile.id) {
       return;
     }
@@ -154,12 +168,18 @@ class RecommendationService extends ChangeNotifier {
     _local = store;
     _profile = store.profile.id;
     var secret = _store.identity(_profile);
-    if (secret == null) {
-      final generated = NostrIdentity.generate();
-      secret = generated.secretHex;
-      unawaited(_store.setIdentity(_profile, secret));
+    if (secret == null && _store.hasStoredIdentity(_profile)) {
+      // 记录还在但这次解不开：不能新建身份，否则已有发布记录会失去管理入口。
+      _notice = '本机推荐身份暂时无法读取，请重启应用后重试';
+    } else {
+      if (secret == null) {
+        final generated = NostrIdentity.generate();
+        secret = generated.secretHex;
+        unawaited(_store.setIdentity(_profile, secret));
+      }
+      unawaited(_store.upgradeIdentity(_profile));
     }
-    _identity = NostrIdentity(secret);
+    _identity = secret == null ? null : NostrIdentity(secret);
     _mine = _store.items(_profile);
     _watch = _store.watch(_profile);
     _hidden = _store.hidden(_profile);
@@ -202,6 +222,8 @@ class RecommendationService extends ChangeNotifier {
   }
 
   void _teardown() {
+    _session++;
+    _publishing = false;
     _publishTimer?.cancel();
     _retryTimer?.cancel();
     _watchTimer?.cancel();
@@ -218,17 +240,27 @@ class RecommendationService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _attached = false;
     _teardown();
     if (identical(current, this)) current = null;
     super.dispose();
   }
 
   void _startPool() {
+    final session = _session;
+    bool current() => !_disposed && _attached && session == _session;
     final pool = _relayFactory(
       recommendationRelays,
-      _onEvent,
-      _onStatus,
-      _onNotice,
+      (event) {
+        if (current()) _onEvent(event);
+      },
+      () {
+        if (current()) _onStatus();
+      },
+      (message) {
+        if (current()) _onNotice(message);
+      },
     );
     _pool = pool;
     pool.start(
@@ -424,6 +456,10 @@ class RecommendationService extends ChangeNotifier {
   }
 
   void _schedulePublish({bool immediate = false}) {
+    if (_disposed || !_attached) return;
+    _publishRevision++;
+    _pendingPublish = true;
+    unawaited(_store.setPending(_profile, true));
     _retryTimer?.cancel();
     _retryTimer = null;
     _publishTimer?.cancel();
@@ -438,13 +474,16 @@ class RecommendationService extends ChangeNotifier {
     final identity = _identity;
     final pool = _pool;
     final profile = _profile;
-    if (!_attached || identity == null || pool == null || _publishing) return;
+    final session = _session;
+    final revision = _publishRevision;
+    bool current() => !_disposed && _attached && session == _session;
+    if (!current() || identity == null || pool == null || _publishing) return;
     _publishing = true;
     notifyListeners();
     try {
       final createdAt = max(_nowSeconds(), _publishedAt + 1);
-      _publishedAt = createdAt;
-      final event = NostrIdentity.sign(
+      final items = List<RecommendationEntry>.of(_mine);
+      final event = await NostrIdentity.signAsync(
         kind: recommendationKind,
         createdAt: createdAt,
         tags: [
@@ -452,34 +491,43 @@ class RecommendationService extends ChangeNotifier {
           ['t', recommendationEventTag],
           ['client', recommendationClient],
         ],
-        content: encodeVectorContent(_mine),
+        content: encodeVectorContent(items),
         secretHex: identity.secretHex,
       );
+      // 签名期间可能切换用户或删除记录；旧快照不能覆盖新状态或被发出去。
+      if (!current() || revision != _publishRevision) return;
+      _publishedAt = createdAt;
       _vectors[identity.publicKey] = RecommendationVector(
         pubkey: identity.publicKey,
         createdAt: createdAt,
-        items: List.of(_mine),
+        items: items,
       );
       await _store.setPublishedAt(profile, createdAt);
-      if (!_attached || profile != _profile) return;
+      if (!current() || revision != _publishRevision) return;
       _rebuild();
       final accepted = await pool.publish(event);
-      if (!_attached || profile != _profile) return;
-      _pendingPublish = accepted == 0;
+      if (!current()) return;
+      _pendingPublish = accepted == 0 || revision != _publishRevision;
       await _store.setPending(profile, _pendingPublish);
+      if (!current()) return;
       _notice = _pendingPublish ? 'relay 未连接，推荐已保存在本机，联网后自动补发' : '';
       if (_pendingPublish) {
         _retryTimer?.cancel();
         _retryTimer = Timer(publishRetryDelay, () => unawaited(_publish()));
       }
     } catch (_) {
-      _pendingPublish = true;
-      _notice = '推荐暂时没有发出去，稍后会自动重试';
-      _retryTimer?.cancel();
-      _retryTimer = Timer(publishRetryDelay, () => unawaited(_publish()));
+      if (current()) {
+        _pendingPublish = true;
+        _notice = '推荐暂时没有发出去，稍后会自动重试';
+        _retryTimer?.cancel();
+        _retryTimer = Timer(publishRetryDelay, () => unawaited(_publish()));
+      }
     } finally {
-      _publishing = false;
-      notifyListeners();
+      if (current()) {
+        _publishing = false;
+        notifyListeners();
+        if (revision != _publishRevision) _schedulePublish();
+      }
     }
   }
 
@@ -492,6 +540,8 @@ class RecommendationService extends ChangeNotifier {
     _vectors[vector.pubkey] = vector;
     final identity = _identity;
     if (identity != null &&
+        !_pendingPublish &&
+        !_publishing &&
         vector.pubkey == identity.publicKey &&
         vector.createdAt >= _publishedAt) {
       _mine = List.of(vector.items);
