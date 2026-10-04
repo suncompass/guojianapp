@@ -60,6 +60,71 @@ String _nativeRequest(String body) {
   }
 }
 
+/// 在工作 isolate 里完成编码、原生调用与解码：大目录与剧库包的 JSON / Base64
+/// 处理不再占用界面线程，失败时回传带 code 的信封而不是抛出无法序列化的异常。
+Map<String, dynamic> _invoke(
+  Map<String, dynamic> input, {
+  Uint8List? upload,
+  String uploadKey = 'payload',
+}) {
+  final String body;
+  try {
+    body = jsonEncode(
+      upload == null ? input : {...input, uploadKey: base64Encode(upload)},
+    );
+  } on Object {
+    return const <String, dynamic>{
+      'ok': false,
+      'error': '本地请求无法编码，请重试',
+      'code': 'bridge_encode',
+    };
+  }
+  final String encoded;
+  try {
+    encoded = _nativeRequest(body);
+  } on UnsupportedError {
+    return const <String, dynamic>{
+      'ok': false,
+      'error': '当前平台不支持本地核心',
+      'code': 'core_unsupported',
+    };
+  } on Object {
+    return const <String, dynamic>{
+      'ok': false,
+      'error': '本地核心加载失败，请使用完整安装包重新安装',
+      'code': 'core_unavailable',
+    };
+  }
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(encoded);
+  } on FormatException {
+    return const <String, dynamic>{
+      'ok': false,
+      'error': '本地核心返回的数据无法解析，请重试',
+      'code': 'core_protocol',
+    };
+  }
+  if (decoded is! Map) {
+    return const <String, dynamic>{
+      'ok': false,
+      'error': '本地核心返回的数据无法解析，请重试',
+      'code': 'core_protocol',
+    };
+  }
+  return Map<String, dynamic>.from(decoded);
+}
+
+int _nativeTimeoutSeconds(String action) => action == 'moveDownloads'
+    ? 620
+    : action == 'danmaku'
+    ? 15
+    : action == 'preload'
+    ? 20
+    : action == 'libraryImport'
+    ? 180
+    : 70;
+
 class AppFailure implements Exception {
   AppFailure(this.message, {this.code = ''});
   final String message;
@@ -549,7 +614,10 @@ class NativeRepository extends AppRepository {
   Future<Uint8List> exportLibraryPackage() async {
     final result = await _call({'action': 'libraryExportXZ'});
     libraryPackageCount = (result['count'] as num?)?.toInt() ?? 0;
-    return base64Decode(result['payload'] as String? ?? '');
+    final payload = result['payload'] as String? ?? '';
+    if (payload.isEmpty) return Uint8List(0);
+    // 剧库包可能有数 MB，解码放到工作 isolate，避免界面线程长帧。
+    return Isolate.run(() => base64Decode(payload));
   }
 
   @override
@@ -558,13 +626,14 @@ class NativeRepository extends AppRepository {
   @override
   Future<LibraryImportResult> importLibraryPackage(Uint8List payload) async =>
       LibraryImportResult.fromJson(
-        await _call({
-          'action': 'libraryImportXZ',
-          'payload': base64Encode(payload),
-        }),
+        await _call({'action': 'libraryImportXZ'}, upload: payload),
       );
 
-  Future<Map<String, dynamic>> _call(Map<String, dynamic> input) async {
+  Future<Map<String, dynamic>> _call(
+    Map<String, dynamic> input, {
+    Uint8List? upload,
+    String uploadKey = 'payload',
+  }) async {
     try {
       final action = input['action'] as String;
       final unrestricted =
@@ -630,21 +699,9 @@ class NativeRepository extends AppRepository {
       if (action == 'resolve' && access != null && !access!.canDownload) {
         input['force'] = true;
       }
-      final body = jsonEncode(input);
-      final encoded = await Isolate.run(() => _nativeRequest(body)).timeout(
-        Duration(
-          seconds: action == 'moveDownloads'
-              ? 620
-              : action == 'danmaku'
-              ? 15
-              : action == 'preload'
-              ? 20
-              : action == 'libraryImport'
-              ? 180
-              : 70,
-        ),
-      );
-      final response = jsonDecode(encoded) as Map<String, dynamic>;
+      final response = await Isolate.run(
+        () => _invoke(input, upload: upload, uploadKey: uploadKey),
+      ).timeout(Duration(seconds: _nativeTimeoutSeconds(action)));
       if (response['ok'] != true) {
         throw AppFailure(
           response['error'] as String? ?? '读取失败，请重试',
@@ -687,7 +744,8 @@ class NativeRepository extends AppRepository {
       }
       throw AppFailure('站源响应超时，请重试');
     } catch (_) {
-      throw AppFailure('本地核心加载失败，请使用完整安装包重新安装');
+      // 核心加载与协议问题已由 _invoke 分类回传，这里只剩本地校验或调度失败。
+      throw AppFailure('本地请求处理失败，请重试');
     }
   }
 

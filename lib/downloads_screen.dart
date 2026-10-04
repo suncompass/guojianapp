@@ -38,8 +38,11 @@ class _CollectionMenu {
   final DownloadCollection collection;
 }
 
-class _DownloadsScreenState extends State<DownloadsScreen> {
+class _DownloadsScreenState extends State<DownloadsScreen>
+    with WidgetsBindingObserver {
   Timer? _timer;
+  bool _foreground = true;
+  String _signature = '';
   final _search = TextEditingController();
   final _selected = <String>{};
   final _expanded = <String>{};
@@ -74,8 +77,26 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       ..addListener(_changed);
     widget.store.addListener(_changed);
     widget.store.libraryChanges.addListener(_changed);
-    _refresh();
-    _timer = Timer.periodic(const Duration(seconds: 2), (_) => _refresh());
+    WidgetsBinding.instance.addObserver(this);
+    _foreground = _onScreen(
+      WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed,
+    );
+    unawaited(_refresh());
+  }
+
+  static bool _onScreen(AppLifecycleState state) =>
+      state == AppLifecycleState.resumed || state == AppLifecycleState.inactive;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final onScreen = _onScreen(state);
+    if (onScreen == _foreground) return;
+    _foreground = onScreen;
+    if (onScreen) {
+      unawaited(_refresh());
+    } else {
+      _schedule();
+    }
   }
 
   void _changed() {
@@ -86,6 +107,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
   void dispose() {
     _stopBatch = true;
     _timer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _search.dispose();
     widget.store.removeListener(_changed);
     widget.store.libraryChanges.removeListener(_changed);
@@ -94,23 +116,74 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     super.dispose();
   }
 
+  /// 轮询间隔按当前状态取值：没有任务就不轮询，只有活动任务或批量操作才用 2 秒节奏。
+  Duration get _interval {
+    if (!mounted || !_foreground) return Duration.zero;
+    if (!_allowed) return const Duration(seconds: 8);
+    if (!(ModalRoute.of(context)?.isCurrent ?? true)) {
+      return const Duration(seconds: 8);
+    }
+    if (_busy || _jobs.any((job) => job.active)) {
+      return const Duration(seconds: 2);
+    }
+    return _jobs.isEmpty ? Duration.zero : const Duration(seconds: 8);
+  }
+
+  void _schedule() {
+    _timer?.cancel();
+    _timer = null;
+    if (!mounted) return;
+    final interval = _interval;
+    if (interval == Duration.zero) return;
+    _timer = Timer(interval, () => unawaited(_refresh()));
+  }
+
+  /// 任务状态签名：内容没变就只换数据、不重建列表，静止页面不再每 2 秒刷一次。
+  String _signatureOf(List<DownloadJob> jobs) => jobs
+      .map(
+        (job) =>
+            '${job.id}:${job.state}:${job.bytes}:${job.total}:'
+            '${job.progress}:${job.actualQuality}:${job.error}:'
+            '${job.archived}:${job.revision}:'
+            '${job.drama.title}:${job.drama.cover}:${job.drama.episodes}',
+      )
+      .join('\n');
+
   Future<void> _refresh() async {
-    if (_refreshing || !_allowed) return;
+    if (_refreshing || !_allowed) {
+      _schedule();
+      return;
+    }
     _refreshing = true;
+    var changed = _loading;
     try {
       final jobs = await widget.repository.downloads();
       if (mounted && _allowed) {
-        setState(() {
-          _jobs = jobs;
-          _selected.retainAll(jobs.map((job) => job.id));
+        final signature = _signatureOf(jobs);
+        _jobs = jobs;
+        _selected.retainAll(jobs.map((job) => job.id));
+        if (signature != _signature) {
+          changed = true;
+          _signature = signature;
+        }
+        if (_error != null) {
+          changed = true;
           _error = null;
-        });
+        }
       }
     } catch (error) {
-      if (mounted && _allowed) setState(() => _error = error.toString());
+      if (mounted && _allowed) {
+        final message = error.toString();
+        if (message != _error) {
+          changed = true;
+          _error = message;
+        }
+      }
     } finally {
       _refreshing = false;
-      if (mounted) setState(() => _loading = false);
+      _loading = false;
+      if (mounted && changed) setState(() {});
+      _schedule();
     }
   }
 
