@@ -461,7 +461,7 @@ func TestDuanjuNiuguoResolverRejectsMissingEpisodeID(t *testing.T) {
 }
 
 func TestDuanjuGuanguoEmptyDetailIsReportedAsUpstream(t *testing.T) {
-	d, _ := duanjuFixtureDownloader(t, func(writer http.ResponseWriter, request *http.Request) {
+	d, server := duanjuFixtureDownloader(t, func(writer http.ResponseWriter, request *http.Request) {
 		if !strings.Contains(request.URL.Path, "shortVideoDetail") {
 			writer.WriteHeader(http.StatusNotFound)
 			return
@@ -469,6 +469,8 @@ func TestDuanjuGuanguoEmptyDetailIsReportedAsUpstream(t *testing.T) {
 		writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_, _ = writer.Write([]byte(`{"code":200,"msg":"success","data":null,"title":null}`))
 	})
+	// 少这一步就会打到真实的观果接口：CI 网络一慢就变成超时错误，用例随机变红。
+	d.providerHosts[sourceGuanguo] = server.URL
 	_, _, err := d.fetchGuanguoDetail(context.Background(), "110000042659853849")
 	if err == nil {
 		t.Fatal("guanguo empty detail should fail")

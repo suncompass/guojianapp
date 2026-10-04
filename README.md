@@ -1,6 +1,18 @@
 # 红果鉴 / 真果鉴
 
-Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.2.92+2098（开发快照）**。
+Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.2.93+2099（开发快照）**。
+
+### 0.2.93：go job 随机红的根因与修复，dart 双变体转绿
+
+复核 0.2.92 的运行 `37190472913`：`dart` **success**，`scripts` success，`ios` 两版 success；`go` failure；`android` 两版与 `release` 被取消（整个 run 的结论是 `cancelled`），所以出包链路这一轮没有走完。
+
+`dart` 这次两套测试都跑完了：默认变体 254 通过 / 3 跳过，全站源变体（`ALL_SOURCES=true`）257 通过。上一轮整段回退 `test/recommendation_service_test.dart` 确认有效（前一次是 237 通过 / 17 失败），而且新加的 `if: ${{ !cancelled() }}` 让第二套测试第一次完整上报——它以前只要第一套红就被跳过，现在能看到全站源变体比默认变体多跑 3 项用例。
+
+同一次运行的 `go` job 红在一个此前没暴露的问题上：`TestDuanjuGuanguoEmptyDetailIsReportedAsUpstream` 在 `-ldflags buildAllSources=true` 变体里报 `context deadline exceeded`，请求地址是真实的 `api.drama.9ddm.com`。这个用例本来该是纯本地的：它自己起了 `httptest` fixture 并返回空详情，却漏了把宿主指过去的那行 `d.providerHosts[sourceGuanguo] = server.URL`（同文件里其它观果用例都写了），于是 fixture 服务器白建、请求打到真实站点，站点一慢就把「上游返回空数据」变成「网络超时」。同一个 run 里先跑的 `go test -race ./...` 是 `ok`，两遍之间只差网络时延，属于典型的随机红。0.2.93 补上这一行，用例恢复为纯本地执行。
+
+验证方式：本机仍无 Go / Dart 工具链。改动只有一行赋值，静态核对的是同文件既有写法、`duanjuBaseURL` 对 `providerHosts` 的优先使用，以及 `duanjuFindList` 对 JSON `null` 返回 `nil`（因此 fixture 的空详情仍会走到「返回空数据」分支）；实际编译与用例执行由 CI 的 `go` job 覆盖。
+
+后续顺序：大剧库持久化（引擎锁内的整份序列化）与播放器状态整理；站源契约；README 顶部状态收敛。
 
 ### 0.2.92：复核 0.2.91 的 CI 结果并回退一处误改
 
