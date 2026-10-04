@@ -9,11 +9,8 @@ import 'package:duanju_app/recommendation_models.dart';
 import 'package:duanju_app/recommendation_service.dart';
 import 'package:duanju_app/recommendation_store.dart';
 import 'package:duanju_app/secret_store.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-const _deviceChannel = MethodChannel('duanju/device');
 
 /// 只记录调用、不联网的 relay 替身。
 class _FakeRelay extends NostrRelayPool {
@@ -128,15 +125,10 @@ void main() {
     preferences = await SharedPreferences.getInstance();
     store = LocalStore(preferences);
     SecretStore.reset();
-    // 假平台回 null：安全存储不可用时身份必须照常落到明文。
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(_deviceChannel, (call) async => null);
     await SecretStore.initialize(preferences);
   });
 
   tearDown(() {
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(_deviceChannel, null);
     RecommendationService.current?.dispose();
     RecommendationService.current = null;
     store.dispose();

@@ -1,6 +1,18 @@
 # 红果鉴 / 真果鉴
 
-Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.2.91+2097（开发快照）**。
+Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.2.92+2098（开发快照）**。
+
+### 0.2.92：复核 0.2.91 的 CI 结果并回退一处误改
+
+推送 `6781f49` 后运行 `37189984306` 给出复核结果：`dart` job 仍然 **failure**。这次是 237 通过、17 失败、3 跳过，17 项全部落在 `test/recommendation_service_test.dart`，报错位置是该文件 `setUp` / `tearDown` 的第 132、138 行，内容为 `Binding has not yet been initialized.`——`TestDefaultBinaryMessengerBinding.instance` 在从未初始化 binding 的测试文件里直接抛错。
+
+上一轮的判断有一处过度推广：`test/feeds_screen_test.dart` 的两项失败确实是「未挂 mock 的 `duanju/device` 通道在 widget 测试里不回包 → `SecretStore._protect` 的 5 秒超时定时器悬挂」，但 `test/recommendation_service_test.dart` 用的是普通 `test()`、没有 `testWidgets`，它此前在 CI 上是绿的，把同一套 mock 加进它的 `setUp` 反而让全部 17 个用例在初始化阶段就失败。本轮把该文件的改动整段回退，与 `8685080` 字节一致。
+
+同一次运行也证实另外两处修复有效：`test/feeds_screen_test.dart` 的底部导航入口、远端推荐入榜两项，以及 `test/secret_store_test.dart` 的「预载是幂等的」用例都没有再失败。
+
+顺带补一处反馈盲区：`dart` job 的第二套测试（`ALL_SOURCES=true` 变体）此前在第一套失败时被 Actions 自动跳过，等于每轮只拿到一半反馈，修一轮要两趟 CI 才能收敛。现在该步骤加上 `if: ${{ !cancelled() }}` 条件，两套测试都执行、都上报；`scripts/test_workflow.py` 增加不变量守住这一条。
+
+说明：运行 `37189984306` 的整体结论是 `cancelled`——`dart` job 自身跑完并给出结论，`android` / `ios` 出包 job 在 `dart` 报错后被取消，所以 0.2.91 那两处 Dart 改动这一轮没有走完出包链路（上一轮 `37188966356` 的两版 APK 均已成功产出）。
 
 ### 0.2.91：CI 首轮结果与三处测试失败修复
 

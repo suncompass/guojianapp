@@ -26,6 +26,16 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('dart format --output=none --set-exit-if-changed', job_block('dart'))
         self.assertIn('dart analyze lib test integration_test test_driver', job_block('dart'))
         self.assertEqual(job_block('dart').count('flutter test --dart-define=DISABLE_REMOTE_IMAGES=true'), 2)
+        # 两套 Flutter 测试互为独立信号：默认变体失败时全站源变体仍要执行并上报，
+        # 否则一套测试红就完全看不到另一套的结果，修一轮只能得到一半反馈。
+        self.assertIsNotNone(
+            re.search(
+                r'(?m)^      - name: 全站源变体的 Flutter 测试\n'
+                r'        if: \$\{\{ !cancelled\(\) \}\}\n'
+                r'        run: flutter test --dart-define=DISABLE_REMOTE_IMAGES=true'
+                r' --dart-define=ALL_SOURCES=true\n',
+                job_block('dart')),
+            '全站源变体测试必须在默认变体失败后仍执行')
         self.assertIn('go test -race ./...', job_block('go'))
         self.assertIn('working-directory: native', job_block('go'))
 

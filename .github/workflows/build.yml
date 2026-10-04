@@ -62,7 +62,10 @@ jobs:
       - run: dart analyze lib test integration_test test_driver
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: flutter test --dart-define=DISABLE_REMOTE_IMAGES=true
-      - run: flutter test --dart-define=DISABLE_REMOTE_IMAGES=true --dart-define=ALL_SOURCES=true
+      # 全站源变体独立上报：默认测试失败时也要跑完，否则一套测试红就看不到另一套的结果。
+      - name: 全站源变体的 Flutter 测试
+        if: ${{ !cancelled() }}
+        run: flutter test --dart-define=DISABLE_REMOTE_IMAGES=true --dart-define=ALL_SOURCES=true
 
   go:
     runs-on: ubuntu-latest
