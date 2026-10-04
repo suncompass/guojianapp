@@ -20,16 +20,23 @@ env:
   GOSUMDB: sum.golang.org
 
 jobs:
-  checks:
+  # 检查拆成三个互不依赖的 job：脚本、Dart、Go 各自独立上报结果，
+  # 前面的格式或 Flutter 失败不会再掩盖后面的 Go 结果。与打包 job 的关系不变。
+  scripts:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-python@v5
         with:
-          go-version-file: native/go.mod
-          cache-dependency-path: native/go.sum
+          python-version: '3.12'
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
+
+  dart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.47.4'
@@ -56,12 +63,22 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: flutter test --dart-define=DISABLE_REMOTE_IMAGES=true
       - run: flutter test --dart-define=DISABLE_REMOTE_IMAGES=true --dart-define=ALL_SOURCES=true
+
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: native/go.mod
+          cache-dependency-path: native/go.sum
       - run: go test -race ./...
         working-directory: native
       - run: go test -race -ldflags="-X duanjuapp/native/core.buildAllSources=true" ./...
         working-directory: native
 
-  # 打包 job 不依赖 checks：checks 失败只影响状态，不阻塞出包。
+  # 打包 job 不依赖上面三个检查 job：检查失败只影响状态，不阻塞出包。
   android:
     runs-on: ubuntu-latest
     timeout-minutes: 45

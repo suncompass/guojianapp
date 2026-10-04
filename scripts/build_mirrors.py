@@ -14,9 +14,12 @@ def mirrored_pub_lockfile(root, environment):
         return
     lockfile = Path(root) / 'pubspec.lock'
     original = lockfile.read_bytes()
-    rewritten = re.sub(r'(?m)^([ \t]+url:[ \t]*)"?https://pub\.(?:dev|dartlang\.org)/?"?([ \t]*)$',
-                       lambda match: match[1] + json.dumps(mirror) + match[2],
-                       original.decode('utf-8')).encode('utf-8')
+    # Windows 检出的锁文件是 CRLF；\r? 要跟着 [ \t]* 一起留在匹配里，
+    # 否则整行匹配不上，改写会静默跳过。
+    rewritten = re.sub(
+        r'(?m)^([ \t]+url:[ \t]*)"?https://pub\.(?:dev|dartlang\.org)/?"?([ \t]*\r?)$',
+        lambda match: match[1] + json.dumps(mirror) + match[2],
+        original.decode('utf-8')).encode('utf-8')
     if rewritten == original:
         yield
         return

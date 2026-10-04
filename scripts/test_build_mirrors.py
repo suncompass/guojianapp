@@ -64,6 +64,21 @@ class BuildMirrorTests(unittest.TestCase):
             self.assertEqual(lock.read_text(encoding='utf-8'), original)
             self.assertEqual(list((root / 'build').iterdir()), [])
 
+    def test_pub_mirror_rewrites_crlf_lockfile(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            lock = root / 'pubspec.lock'
+            original = (
+                b'packages:\n  public:\n    description:\n'
+                b'      url: "https://pub.dev"\r\n    version: "1.2.3"\r\n'
+            )
+            lock.write_bytes(original)
+            with mirrored_pub_lockfile(root, {'PUB_HOSTED_URL': 'https://pub.flutter-io.cn'}):
+                self.assertEqual(lock.read_bytes(),
+                                 original.replace(b'https://pub.dev',
+                                                  b'https://pub.flutter-io.cn'))
+            self.assertEqual(lock.read_bytes(), original)
+
     def test_pub_mirror_preserves_concurrent_user_edit_and_original_backup(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

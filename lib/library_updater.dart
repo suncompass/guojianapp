@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import 'core_bridge.dart';
 import 'local_store.dart';
@@ -39,11 +39,21 @@ class LibraryUpdater extends ChangeNotifier {
     }
     unawaited(refresh());
     _timer = Timer.periodic(const Duration(seconds: 2), (_) {
+      // 离开前台就不再轮询：原生任务在后台继续，界面不需要跟着刷新。
+      if (!_onScreen) return;
       _ticks++;
       if (_statuses.values.any((status) => status.running) || _ticks % 5 == 0) {
         unawaited(refresh());
       }
     });
+  }
+
+  /// 与播放器一致：inactive 仍算在屏，只有 paused / hidden 才算离开。
+  static bool get _onScreen {
+    final state = WidgetsBinding.instance.lifecycleState;
+    return state == null ||
+        state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.inactive;
   }
 
   void _notify() {
