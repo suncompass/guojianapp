@@ -475,10 +475,7 @@ void main() {
       expect(find.text('收起'), findsOneWidget);
       expect(find.byKey(const ValueKey('player-download-badge')), findsNothing);
       // 角标点击后面板展开并直接落在下载页。
-      expect(
-        find.byKey(const ValueKey('enqueue-downloads')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const ValueKey('enqueue-downloads')), findsOneWidget);
       await unmount(tester, player);
     } finally {
       debugDefaultTargetPlatformOverride = null;

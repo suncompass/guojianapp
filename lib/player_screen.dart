@@ -119,10 +119,13 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _automaticFullscreenSuppressed = false;
   bool _panelOpen = false;
   bool _mobilePanelCollapsed = false;
+
   /// 收起态仍可见的头部高度，也是面板裁剪后保留的可见条高度。
   static const double _mobilePanelHeaderHeight = 48;
+
   /// 手机竖屏下画面下方栏目占可用高度的比例，其余高度归视频区。
   static const double _mobilePanelHeightFraction = .44;
+
   /// 收起态头部的下载角标：下载中的集数与平均进度百分比。
   ({int count, int percent})? _mobileDownloadHint;
   Timer? _mobileDownloadTimer;
