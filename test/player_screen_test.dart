@@ -51,6 +51,16 @@ class DeferredPlaybackRepository extends RouteRepository {
   }
 }
 
+class DownloadingRepository extends RouteRepository {
+  final jobs = <DownloadJob>[];
+
+  @override
+  bool get supportsDownloads => true;
+
+  @override
+  Future<List<DownloadJob>> downloads() async => List.of(jobs);
+}
+
 void main() {
   setUp(SearchResultCache.instance.clear);
 
@@ -288,6 +298,192 @@ void main() {
       }
     },
   );
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+    testWidgets(
+      '$platform portrait panel collapses without restarting playback',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = platform;
+        try {
+          final repository = RouteRepository();
+          final player = ScriptedPlayer();
+          await mount(
+            tester,
+            repository,
+            player,
+            size: const Size(390, 844),
+            padding: const FakeViewPadding(top: 32, bottom: 24),
+          );
+          final surface = find.byKey(const ValueKey('player-gesture-surface'));
+          final episode = find.byKey(const ValueKey('play-episode-2'));
+          final toggle = find.byKey(const ValueKey('player-panel-toggle'));
+          final expandedRect = tester.getRect(surface);
+          final surfaceElement = tester.element(surface);
+          final episodeElement = tester.element(episode);
+          final opened = player.opened.length;
+          await player.seek(const Duration(seconds: 28));
+          await player.setRate(1.5);
+          await tester.pump();
+          expect(find.text('收起'), findsOneWidget);
+
+          await tester.tap(toggle);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 110));
+          expect(tester.takeException(), isNull);
+          await tester.pump(const Duration(milliseconds: 220));
+          final collapsedRect = tester.getRect(surface);
+          expect(collapsedRect.top, 0);
+          expect(collapsedRect.height, greaterThan(expandedRect.height));
+          expect(collapsedRect.bottom, closeTo(844 - 24 - 48, .01));
+          expect(tester.getRect(toggle).bottom, lessThanOrEqualTo(844 - 24));
+          expect(find.text('第 1 集 · 共 2 集'), findsOneWidget);
+          expect(find.text('展开'), findsOneWidget);
+          expect(find.text('简介'), findsNothing);
+          expect(episode, findsNothing);
+          expect(tester.element(surface), same(surfaceElement));
+          expect(player.opened, hasLength(opened));
+          expect(player.state.position, const Duration(seconds: 28));
+          expect(player.state.rate, 1.5);
+          expect(player.state.playing, isTrue);
+
+          await tester.tap(toggle);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 220));
+          expect(
+            tester.getRect(surface).height,
+            closeTo(expandedRect.height, .01),
+          );
+          expect(tester.element(episode), same(episodeElement));
+          expect(find.text('收起'), findsOneWidget);
+          expect(player.opened, hasLength(opened));
+          await tester.tap(episode);
+          await settleOperations(tester);
+          expect(repository.requestedEpisodes.last, 2);
+          await unmount(tester, player);
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      },
+    );
+  }
+
+  testWidgets('collapsing preserves the selected tab and paused playback', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      final repository = RouteRepository();
+      final player = ScriptedPlayer();
+      await mount(tester, repository, player, size: const Size(320, 640));
+      await tester.tap(find.text('简介'));
+      await settleOperations(tester);
+      final follow = find.byKey(const ValueKey('player-follow-status'));
+      final followElement = tester.element(follow);
+      await player.pause();
+      await tester.pump();
+      final opened = player.opened.length;
+      final toggle = find.byKey(const ValueKey('player-panel-toggle'));
+      await tester.tap(toggle);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+      expect(follow, findsNothing);
+      expect(find.text('展开'), findsOneWidget);
+      await tester.tap(toggle);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+      expect(tester.element(follow), same(followElement));
+      expect(player.state.playing, isFalse);
+      expect(player.opened, hasLength(opened));
+      await unmount(tester, player);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('collapsed panel follows auto advance and survives rotation', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      final repository = RouteRepository();
+      final player = ScriptedPlayer();
+      await mount(tester, repository, player, size: const Size(390, 844));
+      final toggle = find.byKey(const ValueKey('player-panel-toggle'));
+      await tester.tap(toggle);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+      player.finishEpisode();
+      await settleOperations(tester);
+      expect(find.text('第 2 集 · 共 2 集'), findsOneWidget);
+      expect(find.text('展开'), findsOneWidget);
+
+      // 竖视频横屏仍使用原来的侧栏，不把竖屏折叠状态带入侧栏。
+      player.videoSize(1080, 1920);
+      await settleOperations(tester);
+      tester.view.physicalSize = const Size(844, 390);
+      await settleOperations(tester);
+      expect(toggle, findsNothing);
+      expect(find.byKey(const ValueKey('play-episode-2')), findsOneWidget);
+
+      // 横视频横屏仍为全屏播放，也不显示折叠入口。
+      player.videoSize(1920, 1080);
+      await settleOperations(tester);
+      expect(toggle, findsNothing);
+      expect(find.byKey(const ValueKey('play-episode-2')), findsNothing);
+      tester.view.physicalSize = const Size(390, 844);
+      await settleOperations(tester);
+      expect(find.text('展开'), findsOneWidget);
+      expect(find.text('第 2 集 · 共 2 集'), findsOneWidget);
+      expect(find.byKey(const ValueKey('play-episode-2')), findsNothing);
+      await unmount(tester, player);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('collapsed panel keeps download progress reachable', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      final repository = DownloadingRepository();
+      final player = ScriptedPlayer();
+      final detail = await repository.detail(FixtureRepository.free);
+      repository.jobs.add(
+        DownloadJob(
+          id: 'job-1',
+          drama: detail.drama,
+          episode: detail.episodes.first,
+          state: 'downloading',
+          progress: .4,
+        ),
+      );
+      await mount(tester, repository, player, size: const Size(390, 844));
+      await tester.tap(find.byKey(const ValueKey('player-panel-toggle')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+      await settleOperations(tester);
+      // 收起后详情面板里的下载进度不可见，头部角标要顶上。
+      expect(
+        find.byKey(const ValueKey('player-download-badge')),
+        findsOneWidget,
+      );
+      expect(find.text('1 集 40%'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('player-download-badge')));
+      await settleOperations(tester);
+      expect(find.text('收起'), findsOneWidget);
+      expect(find.byKey(const ValueKey('player-download-badge')), findsNothing);
+      // 角标点击后面板展开并直接落在下载页。
+      expect(
+        find.byKey(const ValueKey('enqueue-downloads')),
+        findsOneWidget,
+      );
+      await unmount(tester, player);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
 
   testWidgets(
     'loading and buffering use readable text without overlapping playback controls',

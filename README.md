@@ -1,6 +1,22 @@
 # 红果鉴 / 真果鉴
 
-Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.2.95+2101（开发快照）**。
+Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.2.96+2102（开发快照）**。
+
+### 0.2.96：播放器下方栏目可收起，发布脚本草稿读回修复
+
+- 需求：手机播放页给画面下方的选集 / 简介 / 推荐 / 下载整块一个收起入口，收起后视频区吃满可用高度，同时不能丢选集滚动位置、当前标签和下载勾选状态。
+
+- 改动：`lib/player_screen.dart` 新增 `_mobilePanelCollapsed`，面板尺寸收成两个常量 `_mobilePanelHeaderHeight`（收起后仍可见的头部高度 48）与 `_mobilePanelHeightFraction`（面板占可用高度比例 `.44`）。`_mobilePlaybackPanel` 改为接收 `availableHeight` 自行按比例算高度，收起时用 `AnimatedAlign.heightFactor = 48 / height` 压到头部、外层 `ClipRect` 裁切：面板内部高度不变，动画过程中选集网格不会被挤到溢出，展开后选集滚动位置、当前标签与下载勾选状态都还在（内容用 `Visibility(maintainState: true)` 保活）。动画 220ms `easeInOutCubic`，系统关闭动效时退化为 `Duration.zero`。
+
+- 头部拆分：原 `_mobileTabs` 兼做「标签行」与「收起态摘要」，现拆为 `_mobilePanelHeader`（外壳）、`_mobileTabRow`（四个标签）、`_mobileCollapsedSummary`（收起态显示「第 N 集 · 共 M 集」，跟随自动连播）、`_mobilePanelToggle`（折叠开关）。开关常驻头部右侧，收起后仍是一触可达的恢复入口；播放控制层在无操作 3 秒（全屏 4 秒）后会淡出，把开关放进控制层等于收起后画面下方不留任何恢复痕迹，故未采用该方案。
+
+- 下载角标：收起后面板是下载进度的唯一展示位置，因此新增 `player-download-badge`（下载图标 +「N 集 P%」，取活动任务平均进度）。仅在「已收起且确有活动任务」时以 10 秒低频探测 `repository.downloads()`，任务结束或面板展开即停止，`dispose` 一并取消定时器；前置校验 `supportsDownloads && canDownload`，探测失败静默忽略、不影响播放。角标可点，直接展开面板并切到下载页。
+
+- 显示范围：折叠入口与角标都在手机竖屏分支内，全屏与宽屏是左右分栏、没有可收起的模块，两者不受影响；移动端竖向滑动已被「上滑下一集 / 下滑上一集」占用，所以不引入手势，只用按钮。
+
+- 验证：本机无 Dart 工具链，编译与用例由 CI 的 `dart` job 覆盖（默认 + ALL_SOURCES 两个变体）。`test/player_screen_test.dart` 新增 4 组用例：`$platform portrait panel collapses without restarting playback`（平台矩阵 + 底部安全区，断言收起后视频区变高、头部贴住安全区、面板内容离屏、播放位置 / 倍速 / 播放状态不变）、`collapsing preserves the selected tab and paused playback`、`collapsed panel follows auto advance and survives rotation`（收起态跟随自动连播，转横屏用侧栏且不带着竖屏折叠状态）、`collapsed panel keeps download progress reachable`（角标出现，点击回到下载页）。
+
+- 同批修复 `scripts/publish_release.py` 的草稿读回缺陷（来自 PR #1）：`create_draft` 建出草稿后用 `GET /releases/tags/{tag}` 读回，而该接口只返回已发布 release（GitHub 文档原文 “Get a published release with the specified tag.”），因此在从无 release 的仓库首次按 tag 发布时必然抛 `New draft release cannot be read`；上游仓库只有 `latest` 一个 release，一直走「直接命中已有 release」分支，从未触发。改为新增 `draft(tag)`，用列表接口 `GET /releases?per_page=100`（`--paginate --slurp`）按 `tag_name` 且 `draft` 为真匹配，`create_draft` 改用它。`scripts/test_publish_release.py` 的 `FakeRelease` 同步复现真实语义（`release()` 看不到草稿、`draft()` 能看到），新增 3 项用例覆盖「首次发布经列表接口找到草稿」「列表里没有草稿时报错」「同 tag 的已发布 release 不被误认成草稿」，由 CI 的 `scripts` job 执行。待验收：按 tag 首次发布在读完草稿后还要 `gh release upload <tag>`，若该步同样无法按 tag 解析草稿，失败点会从读回前移到上传，只有真打一次 tag 才能确认。
 
 ### 0.2.95：播放器核心生命周期状态收敛
 

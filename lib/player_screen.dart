@@ -118,6 +118,15 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _fullscreen = false;
   bool _automaticFullscreenSuppressed = false;
   bool _panelOpen = false;
+  bool _mobilePanelCollapsed = false;
+  /// 收起态仍可见的头部高度，也是面板裁剪后保留的可见条高度。
+  static const double _mobilePanelHeaderHeight = 48;
+  /// 手机竖屏下画面下方栏目占可用高度的比例，其余高度归视频区。
+  static const double _mobilePanelHeightFraction = .44;
+  /// 收起态头部的下载角标：下载中的集数与平均进度百分比。
+  ({int count, int percent})? _mobileDownloadHint;
+  Timer? _mobileDownloadTimer;
+  bool _mobileDownloadProbing = false;
   int _mobileTab = 0;
   bool _autoAdvance = true;
   bool? _systemFullscreen;
@@ -1624,6 +1633,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _recommendationProgressTimer?.cancel();
     _recommendationProgressTimer = null;
     _recommendationGeneration++;
+    _stopMobileDownloadProbe();
     _pictureInPictureExitTimer?.cancel();
     if (_pictureInPictureHandlerInstalled) {
       AppDevice.channel.setMethodCallHandler(null);
@@ -1772,15 +1782,12 @@ class _PlayerScreenState extends State<PlayerScreen>
                           );
                         }
                         if (_mobile) {
-                          final height = constraints.maxHeight * .56;
                           return Column(
                             children: [
-                              SizedBox(
-                                height: height,
-                                width: double.infinity,
-                                child: _videoPane(context),
+                              Expanded(child: _videoPane(context)),
+                              _mobilePlaybackPanel(
+                                availableHeight: constraints.maxHeight,
                               ),
-                              Expanded(child: _mobilePlaybackPanel()),
                             ],
                           );
                         }
@@ -2004,50 +2011,204 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Widget _mobilePlaybackPanel() {
-    final colors = Theme.of(context).colorScheme;
-    return ColoredBox(
-      color: Theme.of(context).scaffoldBackgroundColor,
-      child: SafeArea(
-        top: false,
-        child: Column(
-          children: [
-            _mobileTabs(colors),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: _mobileTab == 0
-                      ? _episodePanel(compact: true)
-                      : _mobileTab == 1
-                      ? _mobileSynopsis()
-                      : _mobileTab == 2
-                      ? _mobileRecommendations()
-                      : _mobileDownload(),
+  Widget _mobilePlaybackPanel({required double availableHeight}) {
+    // 面板按可用高度的固定比例分配；收起时让出的高度全部回到视频区，
+    // 面板内部高度不变，只裁切可见区域：动画中网格不会被挤溢出，
+    // 收起后也保留选集滚动位置、当前标签和下载勾选状态。
+    final height = availableHeight * _mobilePanelHeightFraction;
+    return ClipRect(
+      child: AnimatedAlign(
+        alignment: Alignment.topCenter,
+        heightFactor: _mobilePanelCollapsed
+            ? _mobilePanelHeaderHeight / height
+            : 1,
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 220),
+        curve: Curves.easeInOutCubic,
+        child: SizedBox(
+          height: height,
+          child: ColoredBox(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            child: Column(
+              children: [
+                _mobilePanelHeader(Theme.of(context).colorScheme),
+                Expanded(
+                  child: Visibility(
+                    visible: !_mobilePanelCollapsed,
+                    maintainState: true,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: _mobileTab == 0
+                            ? _episodePanel(compact: true)
+                            : _mobileTab == 1
+                            ? _mobileSynopsis()
+                            : _mobileTab == 2
+                            ? _mobileRecommendations()
+                            : _mobileDownload(),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 面板头部：展开时是四个标签，收起时换成剧集进度与下载角标。
+  /// 折叠开关常驻右侧，保证收起后仍有一触可达的恢复入口。
+  Widget _mobilePanelHeader(ColorScheme colors) {
+    final hint = _mobileDownloadHint;
+    return SizedBox(
+      height: _mobilePanelHeaderHeight,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: _mobilePanelCollapsed
+                  ? _mobileCollapsedSummary(colors)
+                  : _mobileTabRow(),
+            ),
+            if (_mobilePanelCollapsed && hint != null)
+              _mobileDownloadBadge(colors, hint.count, hint.percent),
+            _mobilePanelToggle(),
           ],
         ),
       ),
     );
   }
 
-  Widget _mobileTabs(ColorScheme colors) => Padding(
-    padding: const EdgeInsets.fromLTRB(8, 2, 8, 0),
-    child: SizedBox(
-      height: 42,
-      child: Row(
-        children: [
-          _mobileTabButton(0, '选集'),
-          _mobileTabButton(1, '简介'),
-          _mobileTabButton(2, '推荐'),
-          _mobileTabButton(3, '下载'),
-        ],
-      ),
+  Widget _mobileTabRow() => Row(
+    children: [
+      _mobileTabButton(0, '选集'),
+      _mobileTabButton(1, '简介'),
+      _mobileTabButton(2, '推荐'),
+      _mobileTabButton(3, '下载'),
+    ],
+  );
+
+  Widget _mobileCollapsedSummary(ColorScheme colors) => Padding(
+    padding: const EdgeInsets.only(left: 8),
+    child: Text(
+      '第 ${widget.detail.episodes[_index].number} 集 · 共 ${widget.detail.episodes.length} 集',
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(color: colors.onSurfaceVariant, fontSize: 13),
     ),
   );
+
+  /// 收起后面板里的下载进度不可见，头部用角标补上；点击直接展开到下载页。
+  Widget _mobileDownloadBadge(ColorScheme colors, int count, int percent) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: TextButton.icon(
+        key: const ValueKey('player-download-badge'),
+        onPressed: _revealMobileDownloads,
+        icon: const Icon(Icons.download_rounded, size: 14),
+        label: Text('$count 集 $percent%'),
+        style: TextButton.styleFrom(
+          foregroundColor: colors.primary,
+          minimumSize: const Size(0, _mobilePanelHeaderHeight),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          textStyle: const TextStyle(fontSize: 12),
+        ),
+      ),
+    );
+  }
+
+  Widget _mobilePanelToggle() => TextButton.icon(
+    key: const ValueKey('player-panel-toggle'),
+    onPressed: _toggleMobilePanel,
+    icon: Icon(
+      _mobilePanelCollapsed
+          ? Icons.expand_less_rounded
+          : Icons.expand_more_rounded,
+      size: 18,
+    ),
+    label: Text(_mobilePanelCollapsed ? '展开' : '收起'),
+    style: TextButton.styleFrom(
+      minimumSize: const Size(0, _mobilePanelHeaderHeight),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      textStyle: const TextStyle(fontSize: 12),
+    ),
+  );
+
+  void _toggleMobilePanel() {
+    final collapsed = !_mobilePanelCollapsed;
+    setState(() {
+      _mobilePanelCollapsed = collapsed;
+      if (!collapsed) _mobileDownloadHint = null;
+    });
+    if (collapsed) {
+      // 收起瞬间取一次即时状态，避免沿用上一次的旧进度。
+      unawaited(_refreshMobileDownloadHint());
+    } else {
+      _stopMobileDownloadProbe();
+    }
+  }
+
+  void _revealMobileDownloads() {
+    setState(() {
+      _mobileTab = 3;
+      _mobilePanelCollapsed = false;
+      _mobileDownloadHint = null;
+    });
+    _stopMobileDownloadProbe();
+  }
+
+  /// 收起态只做一次轻量探测：面板是下载进度的唯一展示位置，
+  /// 收起后没有角标就等于完全看不到任务。探测失败静默忽略，不影响播放。
+  Future<void> _refreshMobileDownloadHint() async {
+    if (_closed || !_mobilePanelCollapsed || _mobileDownloadProbing) return;
+    if (!widget.repository.supportsDownloads || !widget.store.canDownload) {
+      return;
+    }
+    _mobileDownloadProbing = true;
+    final List<DownloadJob> jobs;
+    try {
+      jobs = await widget.repository.downloads();
+    } catch (_) {
+      _mobileDownloadProbing = false;
+      return;
+    }
+    _mobileDownloadProbing = false;
+    if (!mounted || _closed || !_mobilePanelCollapsed) return;
+    final active = jobs.where((job) => job.active).toList();
+    final hint = active.isEmpty
+        ? null
+        : (count: active.length, percent: _averageProgress(active));
+    if (hint == _mobileDownloadHint) return;
+    setState(() => _mobileDownloadHint = hint);
+    if (hint == null) {
+      _stopMobileDownloadProbe();
+    } else {
+      _startMobileDownloadProbe();
+    }
+  }
+
+  int _averageProgress(List<DownloadJob> jobs) {
+    final total = jobs.fold<double>(0, (sum, job) => sum + job.progress);
+    return (total / jobs.length * 100).round();
+  }
+
+  /// 只在「已收起 + 有任务在下载」时低频轮询，任务结束后自行停止。
+  void _startMobileDownloadProbe() {
+    _mobileDownloadTimer ??= Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => unawaited(_refreshMobileDownloadHint()),
+    );
+  }
+
+  void _stopMobileDownloadProbe() {
+    _mobileDownloadTimer?.cancel();
+    _mobileDownloadTimer = null;
+  }
 
   Widget _mobileTabButton(int value, String label) {
     final selected = _mobileTab == value;
