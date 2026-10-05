@@ -119,6 +119,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _automaticFullscreenSuppressed = false;
   bool _panelOpen = false;
   int _mobileTab = 0;
+  bool _bottomPanelVisible = true;
   bool _autoAdvance = true;
   bool? _systemFullscreen;
   Orientation? _lastOrientation;
@@ -160,6 +161,15 @@ class _PlayerScreenState extends State<PlayerScreen>
       !_television &&
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
+
+  /// 只有手机竖屏布局才有画面下方的选集 / 简介 / 推荐 / 下载栏目，
+  /// 全屏与宽屏是左右分栏，没有可收起的模块，因此不显示开关。
+  bool get _hasBottomPanel => _mobile && !_showFullscreen;
+
+  void _toggleBottomPanel() {
+    if (_closed || !_hasBottomPanel) return;
+    setState(() => _bottomPanelVisible = !_bottomPanelVisible);
+  }
 
   // 播放生命周期由 _phase 状态机派生（0.2.95 收敛），保证
   // loading / buffering / 失败 / 关闭互斥，且 failed 与 _error 非空对应。
@@ -1772,6 +1782,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                           );
                         }
                         if (_mobile) {
+                          // 下方栏目可整块收起：收起后视频区吃掉全部可用高度。
+                          if (!_bottomPanelVisible) {
+                            return _videoPane(context);
+                          }
                           final height = constraints.maxHeight * .56;
                           return Column(
                             children: [
@@ -1865,6 +1879,8 @@ class _PlayerScreenState extends State<PlayerScreen>
             onPictureInPicture: _canUsePictureInPicture
                 ? _enterPictureInPicture
                 : null,
+            onToggleBottomPanel: _hasBottomPanel ? _toggleBottomPanel : null,
+            bottomPanelVisible: _bottomPanelVisible,
             onPrevious: _index > 0 ? () => _play(_index - 1) : null,
             onNext: _index + 1 < widget.detail.episodes.length
                 ? () => _play(_index + 1)

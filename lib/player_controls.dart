@@ -68,6 +68,8 @@ class PlayerControls extends StatefulWidget {
     this.onRetryDanmaku,
     this.onPush,
     this.onPictureInPicture,
+    this.onToggleBottomPanel,
+    this.bottomPanelVisible = true,
     this.enhancement,
   });
 
@@ -99,6 +101,8 @@ class PlayerControls extends StatefulWidget {
   final Future<void> Function()? onRetryDanmaku;
   final Future<void> Function()? onPush;
   final Future<void> Function()? onPictureInPicture;
+  final VoidCallback? onToggleBottomPanel;
+  final bool bottomPanelVisible;
   final VideoEnhancementController? enhancement;
 
   @override
@@ -534,13 +538,28 @@ class _PlayerControlsState extends State<PlayerControls> {
         (mobile || fullscreen && width >= 860 || !fullscreen && width >= 680);
     final showCompare = fullscreen && width >= 820;
     final showVolume = !widget.swipeEnabled && width >= 360;
+    // 下方栏目开关靠左独占，与倍速、清晰度同一行；控制层显隐时机不变。
+    final Widget? bottomPanelToggle = widget.onToggleBottomPanel == null
+        ? null
+        : _toolIcon(
+            key: const ValueKey('player-bottom-panel'),
+            tooltip: widget.bottomPanelVisible ? '隐藏下方栏目' : '显示下方栏目',
+            icon: widget.bottomPanelVisible
+                ? Icons.unfold_more_rounded
+                : Icons.unfold_less_rounded,
+            onPressed: widget.onToggleBottomPanel,
+            selected: !widget.bottomPanelVisible,
+          );
     return Align(
       alignment: Alignment.bottomCenter,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (mobile)
-            _mobileControlRow(fullscreen: fullscreen)
+            _mobileControlRow(
+              fullscreen: fullscreen,
+              leading: bottomPanelToggle,
+            )
           else
             _desktopControlRow(
               fullscreen: fullscreen,
@@ -550,6 +569,7 @@ class _PlayerControlsState extends State<PlayerControls> {
               showCompare: showCompare,
               showVolume: showVolume,
               volume: volume,
+              leading: bottomPanelToggle,
             ),
           _progressRow(
             duration: duration,
@@ -790,17 +810,24 @@ class _PlayerControlsState extends State<PlayerControls> {
     );
   }
 
-  Widget _clusteredToolRow(List<Widget> tools) {
-    if (tools.isEmpty) return const SizedBox.shrink();
+  Widget _clusteredToolRow(List<Widget> tools, {Widget? leading}) {
+    if (tools.isEmpty && leading == null) return const SizedBox.shrink();
+    if (tools.isEmpty) {
+      return Row(children: [leading!, const Spacer()]);
+    }
     if (tools.length <= 5) {
       return Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [_toolGroup(tools)],
+        children: [
+          if (leading != null) leading,
+          const Spacer(),
+          _toolGroup(tools),
+        ],
       );
     }
     final leftCount = tools.length ~/ 2;
     return Row(
       children: [
+        if (leading != null) leading,
         _toolGroup(tools.take(leftCount).toList()),
         const Spacer(),
         _toolGroup(tools.skip(leftCount).toList()),
@@ -841,6 +868,7 @@ class _PlayerControlsState extends State<PlayerControls> {
     required bool showCompare,
     required bool showVolume,
     required double volume,
+    Widget? leading,
   }) {
     final tools = [
       if (showSpeedQuality) ...[
@@ -899,11 +927,11 @@ class _PlayerControlsState extends State<PlayerControls> {
     ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
-      child: _clusteredToolRow(tools),
+      child: _clusteredToolRow(tools, leading: leading),
     );
   }
 
-  Widget _mobileControlRow({required bool fullscreen}) {
+  Widget _mobileControlRow({required bool fullscreen, Widget? leading}) {
     final tools = [
       _toolText(
         key: const ValueKey('player-speed'),
@@ -940,7 +968,7 @@ class _PlayerControlsState extends State<PlayerControls> {
     ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(2, 0, 2, 0),
-      child: _clusteredToolRow(tools),
+      child: _clusteredToolRow(tools, leading: leading),
     );
   }
 

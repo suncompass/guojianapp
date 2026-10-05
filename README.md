@@ -1,6 +1,18 @@
 # 红果鉴 / 真果鉴
 
-Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.2.95+2101（开发快照）**。
+Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.2.96+2102（开发快照）**。
+
+### 0.2.96：播放器下方栏目可收起
+
+- 需求：手机播放页在控制层加一个开关，用来显示 / 隐藏画面下方的选集、简介、推荐、下载栏目。
+
+- 改动：`lib/player_controls.dart` 的 `PlayerControls` 新增 `onToggleBottomPanel` 与 `bottomPanelVisible`，在 `_bottomControls` 里构造按钮后作为 `leading` 传进 `_clusteredToolRow`。`_clusteredToolRow` 原来在工具不超过 5 个时用 `MainAxisAlignment.end` 整体靠右，因此改为「左侧 leading + Spacer + 右侧工具聚簇」，按钮真正靠左，倍速与清晰度仍保持原来的右对齐聚簇。`tools.isEmpty` 的空行分支同样要能渲染 leading，避免只剩按钮时整行消失。
+
+- 布局：`lib/player_screen.dart` 增加 `_bottomPanelVisible` 与 `_toggleBottomPanel`。收起时不只是隐藏内容，而是让 `_videoPane` 直接占满可用区域（原先固定 56% 高度的视频区加 `Expanded` 面板改为收起时返回单个视频区），否则画面下方会留下空白。`_hasBottomPanel` 限定 `_mobile && !_showFullscreen`，因为宽屏与全屏是左右分栏、没有可收起的模块，此时不显示按钮。
+
+- 展示时机：按钮放在 `_bottomControls` 内，与倍速、清晰度同一行，因此完全沿用既有控制层显隐规则——播放就绪后与手动呼出时出现，正常播放无操作 3 秒（非全屏）/ 4 秒（全屏）后一起淡出，暂停、缓冲、拖动进度和菜单操作期间保留。未改动任何隐藏计时逻辑。
+
+- 验证：新增 `test/player_screen_test.dart` 的「底部栏目开关隐藏手机标签并可恢复」，覆盖按钮存在、靠左位置（`toggle.left < speed.left`）、收起后四个标签消失且视频区高度超过 80%、恢复后标签重现与提示文案切换。本机没有 Dart / Flutter 工具链，编译与用例执行由 CI 的 `dart` job 覆盖（默认 + ALL_SOURCES 两个变体）。
 
 ### 0.2.95：播放器核心生命周期状态收敛
 

@@ -195,6 +195,58 @@ void main() {
     },
   );
 
+  testWidgets('bottom panel toggle hides the mobile tabs and restores them', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(AppDevice.channel, (call) async {
+      if (call.method == 'pictureInPictureStatus') {
+        return {'supported': true, 'active': false};
+      }
+      return null;
+    });
+    try {
+      final repository = RouteRepository();
+      final player = ScriptedPlayer();
+      await mount(tester, repository, player, size: const Size(390, 844));
+      expect(find.byKey(const ValueKey('player-bottom-panel')), findsOneWidget);
+      expect(find.text('选集'), findsOneWidget);
+      expect(find.text('简介'), findsOneWidget);
+      expect(find.text('下载'), findsOneWidget);
+
+      final toggle = tester.getRect(
+        find.byKey(const ValueKey('player-bottom-panel')),
+      );
+      final speed = tester.getRect(find.byKey(const ValueKey('player-speed')));
+      // 开关靠左，倍速与清晰度仍聚在右侧一行。
+      expect(toggle.left, lessThan(speed.left));
+      expect(toggle.right, lessThan(300));
+
+      await tester.tap(find.byKey(const ValueKey('player-bottom-panel')));
+      await settleOperations(tester);
+      expect(find.text('选集'), findsNothing);
+      expect(find.text('简介'), findsNothing);
+      expect(find.text('推荐'), findsNothing);
+      expect(find.text('下载'), findsNothing);
+      // 收起后视频区吃掉全部可用高度。
+      final video = tester.getRect(find.byKey(const ValueKey('player-gesture-surface')));
+      expect(video.height, greaterThan(844 * .8));
+      expect(find.byTooltip('显示下方栏目'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('player-bottom-panel')));
+      await settleOperations(tester);
+      expect(find.text('选集'), findsOneWidget);
+      expect(find.text('简介'), findsOneWidget);
+      expect(find.byTooltip('隐藏下方栏目'), findsOneWidget);
+      await unmount(tester, player);
+    } finally {
+      messenger.setMockMethodCallHandler(AppDevice.channel, null);
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
   testWidgets('picture-in-picture hides app overlay controls', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     final messenger =
