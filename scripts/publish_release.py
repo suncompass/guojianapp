@@ -96,10 +96,21 @@ class GitHubRelease:
                 return None
             raise
 
+    def draft(self, tag):
+        # 按 tag 查询只返回已发布的 Release，草稿不在其中；列表接口才能看到草稿。
+        pages = json.loads(self.command(
+            'api', '--paginate', '--slurp', f'{self.base}?per_page=100',
+        ))
+        for page in pages:
+            for release in page:
+                if release.get('draft') and release.get('tag_name') == tag:
+                    return release
+        return None
+
     def create_draft(self, tag, title, notes, commit):
         self.command('release', 'create', tag, '--repo', self.repository,
                      '--draft', '--title', title, '--notes', notes, '--target', commit)
-        release = self.release(tag)
+        release = self.draft(tag)
         if release is None:
             raise RuntimeError('New draft release cannot be read')
         return release

@@ -12,7 +12,9 @@ Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、�
 
 - 展示时机：按钮放在 `_bottomControls` 内，与倍速、清晰度同一行，因此完全沿用既有控制层显隐规则——播放就绪后与手动呼出时出现，正常播放无操作 3 秒（非全屏）/ 4 秒（全屏）后一起淡出，暂停、缓冲、拖动进度和菜单操作期间保留。未改动任何隐藏计时逻辑。
 
-- 验证：新增 `test/player_screen_test.dart` 的「底部栏目开关隐藏手机标签并可恢复」，覆盖按钮存在、靠左位置（`toggle.left < speed.left`）、收起后四个标签消失且视频区高度超过 80%、恢复后标签重现与提示文案切换。首次提交有 3 行超出 80 列被 CI 的 `dart format` 拦下（`dart` job 在 2 分 23 秒失败），已按格式器折行后重推。本机没有 Dart / Flutter 工具链，编译与用例执行由 CI 的 `dart` job 覆盖（默认 + ALL_SOURCES 两个变体）。
+- 验证：新增 `test/player_screen_test.dart` 的「底部栏目开关隐藏手机标签并可恢复」，覆盖按钮存在、靠左位置（`toggle.left < speed.left`）、收起后四个标签消失且视频区高度超过 80%、恢复后标签重现与提示文案切换。首次提交有 3 行超出 80 列被 CI 的 `dart format` 拦下（`dart` job 在 2 分 23 秒失败），已按格式器折行后重推，仍有格式差异待处理。本机没有 Dart / Flutter 工具链，编译与用例执行由 CI 的 `dart` job 覆盖（默认 + ALL_SOURCES 两个变体）。
+
+- 同批修复 `scripts/publish_release.py` 的草稿读回缺陷：`create_draft` 建出草稿后用 `GET /releases/tags/{tag}` 读回，但该接口只返回已发布的 Release、不含草稿，因此在从无 Release 的仓库首次发布时必然抛 `New draft release cannot be read`。改为用列表接口 `GET /releases?per_page=100` 按 `tag_name` 且 `draft` 为真匹配。上游仓库因 `latest` 早已发布而一直走「直接命中已有 Release」分支，从未触发此路径。`scripts/test_publish_release.py` 的 `FakeRelease` 同步复现该行为（`release()` 看不到草稿、`draft()` 能看到），并新增 3 项用例：首次发布经列表接口找到草稿、列表里没有草稿时报错、同 tag 的已发布 Release 不被误认成草稿。旧实现下这 3 项中 2 项失败，回退验证有效。
 
 ### 0.2.95：播放器核心生命周期状态收敛
 

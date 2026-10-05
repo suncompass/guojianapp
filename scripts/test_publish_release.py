@@ -11,6 +11,7 @@ from publish_release import GitHubRelease, prepare_assets, publish_assets, sha25
 class FakeRelease:
     def __init__(self):
         self.exists = True
+        self.drafted = False
         self.remote = [{'id': 1, 'name': 'previous.apk'}]
         self.calls = []
         self.fail_upload = False
@@ -18,11 +19,16 @@ class FakeRelease:
         self.fail_promote = False
 
     def release(self, tag):
-        return {'id': 10} if self.exists else None
+        # 按 tag 查询只看得到已发布的 Release，与 GitHub 行为一致。
+        return {'id': 10} if self.exists and not self.drafted else None
+
+    def draft(self, tag):
+        # 列表接口能看到草稿。
+        return {'id': 10} if self.drafted else None
 
     def create_draft(self, *args):
         self.calls.append('draft')
-        self.exists = True
+        self.drafted = True
         return {'id': 10}
 
     def assets(self, release_id):
@@ -109,6 +115,29 @@ class PublishReleaseTests(unittest.TestCase):
             self.publish()
         self.assertEqual(self.client.calls[0], 'draft')
         self.assertNotIn('promote', self.client.calls)
+
+    def test_first_publish_finds_draft_through_the_list_endpoint(self):
+        # 按 tag 查询看不到草稿，只有列表接口能读回新建的草稿。
+        self.client.exists = False
+        self.client.remote = []
+        self.publish()
+        self.assertEqual(self.client.calls,
+                         ['draft', 'list', 'upload:new.apk', 'list', 'promote'])
+
+    def test_create_draft_reports_failure_when_list_has_no_draft(self):
+        client = GitHubRelease('owner/repo')
+        with mock.patch.object(client, 'command', side_effect=[
+            '',  # gh release create
+            json.dumps([[{'draft': False, 'tag_name': 'latest'}]]),  # 只有已发布项
+        ]):
+            with self.assertRaisesRegex(RuntimeError, 'draft release cannot be read'):
+                client.create_draft('latest', 'title', 'notes', 'a' * 40)
+
+    def test_draft_ignores_published_release_with_same_tag(self):
+        client = GitHubRelease('owner/repo')
+        pages = [[{'draft': False, 'tag_name': 'latest'}]]
+        with mock.patch.object(client, 'command', return_value=json.dumps(pages)):
+            self.assertIsNone(client.draft('latest'))
 
     def test_only_404_is_treated_as_missing_release(self):
         client = GitHubRelease('owner/repo')
