@@ -38,3 +38,6 @@ ios/Flutter/flutter_export_environment.sh
 ios/Runner/GeneratedPluginRegistrant.*
 ios/DuanjuCore/*.xcframework/
 **/xcuserdata/
+
+# CodeGraph 本地索引
+.codegraph/
