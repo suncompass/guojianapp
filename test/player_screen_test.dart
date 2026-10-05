@@ -211,7 +211,10 @@ void main() {
       final repository = RouteRepository();
       final player = ScriptedPlayer();
       await mount(tester, repository, player, size: const Size(390, 844));
-      expect(find.byKey(const ValueKey('player-bottom-panel')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('player-bottom-panel')),
+        findsOneWidget,
+      );
       expect(find.text('选集'), findsOneWidget);
       expect(find.text('简介'), findsOneWidget);
       expect(find.text('下载'), findsOneWidget);
@@ -231,7 +234,9 @@ void main() {
       expect(find.text('推荐'), findsNothing);
       expect(find.text('下载'), findsNothing);
       // 收起后视频区吃掉全部可用高度。
-      final video = tester.getRect(find.byKey(const ValueKey('player-gesture-surface')));
+      final video = tester.getRect(
+        find.byKey(const ValueKey('player-gesture-surface')),
+      );
       expect(video.height, greaterThan(844 * .8));
       expect(find.byTooltip('显示下方栏目'), findsOneWidget);
 
