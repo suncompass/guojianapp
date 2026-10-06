@@ -44,24 +44,15 @@ class PlayerInteractions extends ChangeNotifier {
   bool _moved = false;
   bool _held = false;
   bool _boosting = false;
-  bool _seeking = false;
-  int _seekDirection = 0;
-  int _holdSeekDirection = 0;
-  Timer? _seekTimer;
   bool _keyboardHold = false;
   bool _cancelUntilRelease = false;
   bool _disposed = false;
   double _unmutedVolume = 100;
   String _feedback = '';
   DateTime _ignoreTapUntil = DateTime(2000);
-  int _seekTarget = 0;
-
-  static const _seekStepSeconds = 5;
-  static const _seekInterval = Duration(milliseconds: 250);
 
   String get feedback => _feedback;
   bool get boosting => _boosting;
-  bool get seeking => _seeking;
   bool get suppressTap => DateTime.now().isBefore(_ignoreTapUntil);
   Future<void> get pendingRates => _rates;
 
@@ -74,7 +65,7 @@ class PlayerInteractions extends ChangeNotifier {
     }
     if (!persistent && message.isNotEmpty) {
       _hintTimer = Timer(const Duration(milliseconds: 1200), () {
-        hint(_boosting ? '3 倍速 · 松开恢复' : '', persistent: true);
+        hint(_boosting ? '2 倍速 · 松开恢复' : '', persistent: true);
       });
     }
   }
@@ -104,62 +95,11 @@ class PlayerInteractions extends ChangeNotifier {
           player.state.completed) {
         return;
       }
-      if (!keyboard && _holdSeekDirection != 0) {
-        _beginSeek(_holdSeekDirection);
-        return;
-      }
       _boosting = true;
       _held = true;
-      unawaited(_setRate(3));
-      hint('3 倍速 · 松开恢复', persistent: true);
+      unawaited(_setRate(2));
+      hint('2 倍速 · 松开恢复', persistent: true);
     });
-  }
-
-  void _beginSeek(int direction) {
-    if (!available() || player.state.duration <= Duration.zero) return;
-    _seeking = true;
-    _held = true;
-    _ignoreTapUntil = DateTime.now().add(const Duration(seconds: 5));
-    _seekDirection = direction;
-    _seekTarget = player.state.position.inMilliseconds;
-    _stepSeek();
-    _seekTimer?.cancel();
-    _seekTimer = Timer.periodic(_seekInterval, (_) => _stepSeek());
-  }
-
-  void _stepSeek() {
-    if (_disposed || !_seeking) return;
-    if (!available() ||
-        !player.state.playing ||
-        player.state.completed ||
-        player.state.duration <= Duration.zero) {
-      _endSeek(silent: true);
-      return;
-    }
-    final duration = player.state.duration.inMilliseconds;
-    _seekTarget = (_seekTarget + _seekDirection * _seekStepSeconds * 1000)
-        .clamp(0, duration);
-    unawaited((onSeek ?? player.seek)(Duration(milliseconds: _seekTarget)));
-    hint(
-      '${_seekDirection > 0 ? '快进至' : '后退至'} '
-      '${formatPosition(_seekTarget / 1000)}',
-      persistent: true,
-    );
-  }
-
-  void _endSeek({bool silent = false}) {
-    if (!_seeking) return;
-    _seekTimer?.cancel();
-    _seekTimer = null;
-    _seeking = false;
-    final direction = _seekDirection;
-    _seekDirection = 0;
-    if (!silent) {
-      hint(
-        '${direction > 0 ? '快进' : '后退'}结束 · '
-        '${formatPosition(_seekTarget / 1000)}',
-      );
-    }
   }
 
   void _endHold({bool tap = false, bool silent = false}) {
@@ -169,7 +109,6 @@ class PlayerInteractions extends ChangeNotifier {
     _holdTimer = null;
     _keyboardHold = false;
     _boosting = false;
-    _endSeek(silent: silent);
     if (boosted) {
       unawaited(_setRate(baseSpeed()));
       if (!silent) hint('恢复 ${baseSpeed()} 倍速');
@@ -195,7 +134,6 @@ class PlayerInteractions extends ChangeNotifier {
     PointerDownEvent event, {
     required bool swipeEnabled,
     required double height,
-    double width = 0,
   }) {
     _pointers.add(event.pointer);
     if (_pointers.length != 1 || _cancelUntilRelease) {
@@ -208,13 +146,6 @@ class PlayerInteractions extends ChangeNotifier {
     _started = event.timeStamp;
     _swipeEnabled = swipeEnabled && event.kind == PointerDeviceKind.touch;
     _swipeThreshold = math.max(56, math.min(100, height * .1));
-    _holdSeekDirection = _swipeEnabled && width > 0
-        ? event.localPosition.dx < width * .38
-              ? -1
-              : event.localPosition.dx > width * .62
-              ? 1
-              : 0
-        : 0;
     _moved = _held = false;
     _beginHold();
   }
@@ -222,10 +153,8 @@ class PlayerInteractions extends ChangeNotifier {
   void pointerMove(PointerMoveEvent event) {
     if (_pointer != event.pointer || _origin == null) return;
     _lastPosition = event.localPosition;
-    if (_seeking) return;
     if ((event.localPosition - _origin!).distance > 12) {
       _moved = true;
-      _holdSeekDirection = 0;
       _endHold();
     }
   }
@@ -251,7 +180,6 @@ class PlayerInteractions extends ChangeNotifier {
     }
     _pointer = null;
     _origin = null;
-    _holdSeekDirection = 0;
     _endHold();
     if (swipe && available()) hint(onEpisode(delta.dy < 0 ? 1 : -1));
   }
@@ -345,8 +273,6 @@ class PlayerInteractions extends ChangeNotifier {
     _disposed = true;
     _holdTimer?.cancel();
     _hintTimer?.cancel();
-    _seekTimer?.cancel();
-    _seeking = false;
     if (_boosting) unawaited(_setRate(baseSpeed()));
     _boosting = false;
     _playing.cancel();

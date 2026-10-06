@@ -214,7 +214,6 @@ class _PlayerControlsState extends State<PlayerControls> {
       widget.player.state.playing &&
       !widget.player.state.buffering &&
       !widget.interactions.boosting &&
-      !widget.interactions.seeking &&
       _seekValue == null;
 
   void _scheduleHide() {
@@ -321,7 +320,6 @@ class _PlayerControlsState extends State<PlayerControls> {
                   event,
                   swipeEnabled: widget.swipeEnabled,
                   height: constraints.maxHeight,
-                  width: constraints.maxWidth,
                 );
               },
               onPointerMove: widget.interactions.pointerMove,
