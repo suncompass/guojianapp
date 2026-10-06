@@ -5,15 +5,13 @@ import shutil
 import zipfile
 from pathlib import Path
 
-from app_build import BuildVariant, add_variant_argument, verify_native_build
+from app_build import APP_SLUG, verify_native_build
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument('--platform', choices=['android', 'windows'], required=True)
 parser.add_argument('--abi', action='append', choices=['arm64-v8a', 'armeabi-v7a', 'x86_64'])
-add_variant_argument(parser)
 options = parser.parse_args()
-variant = BuildVariant(options.all_sources)
 match = re.search(r'^version:\s*([\w.+-]+)\s*$', (root / 'pubspec.yaml').read_text(), re.MULTILINE)
 if not match:
     raise SystemExit('pubspec.yaml 缺少合法版本号。')
@@ -36,28 +34,24 @@ if options.platform == 'android':
                 raise SystemExit('APK 缺少原生库：' + ', '.join(sorted(missing)))
             verify_native_build(
                 root / 'android' / 'app' / 'src' / 'main' / 'jniLibs' / abi / 'libduanju_core.so',
-                variant,
                 packaged=archive.read(f'lib/{abi}/libduanju_core.so'),
             )
-        target = output / f'{variant.slug}-{version}-{abi}.apk'
+        target = output / f'{APP_SLUG}-{version}-{abi}.apk'
         shutil.copy2(source, target)
         artifacts.append(target)
 else:
     bundle = root / 'build' / 'windows' / 'x64' / 'runner' / 'Release'
-    required = ['zhenguojian.exe', 'duanju_core.dll', 'flutter_windows.dll', 'libffmpegkit.dll',
+    required = ['hongguojian.exe', 'duanju_core.dll', 'flutter_windows.dll', 'libffmpegkit.dll',
                 'libmpv-2.dll', 'msvcp140.dll', 'vcruntime140.dll',
                 'data/icudtl.dat', 'data/app.so']
     missing = [name for name in required if not (bundle / name).is_file()]
     if missing:
         raise SystemExit('Windows 安装包缺少文件：' + ', '.join(missing))
-    target = output / f'{variant.slug}-{version}-windows-x64.zip'
+    target = output / f'{APP_SLUG}-{version}-windows-x64.zip'
     with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as archive:
         for source in sorted(bundle.rglob('*')):
             if source.is_file():
-                relative = source.relative_to(bundle).as_posix()
-                if relative == 'zhenguojian.exe':
-                    relative = variant.slug + '.exe'
-                archive.write(source, relative)
+                archive.write(source, source.relative_to(bundle).as_posix())
     artifacts.append(target)
 
 checksums = []

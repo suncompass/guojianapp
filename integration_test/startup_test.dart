@@ -1,4 +1,3 @@
-import 'package:duanju_app/app_build.dart';
 import 'package:duanju_app/home_screen.dart';
 import 'package:duanju_app/main.dart' as app;
 import 'package:flutter/material.dart';
@@ -35,7 +34,7 @@ void main() {
       tester.widget<app.DuanjuApp>(find.byType(app.DuanjuApp)).store,
       isNotNull,
     );
-    debugPrint('STARTUP_READY allSources=$allSourcesEnabled');
+    debugPrint('STARTUP_READY');
     debugPrint('ENTRY_CAPTURE startup');
     await tester.pump(const Duration(seconds: 8));
     expect(find.byType(HomeScreen), findsOneWidget);

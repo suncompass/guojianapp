@@ -430,11 +430,7 @@ func (engine *nativeEngine) loadSourceCatalogCategoryPage(ctx context.Context, s
 }
 
 func (engine *nativeEngine) sourceCatalogCategories(ctx context.Context, source string) []string {
-	source = canonicalProviderSource(source)
-	if !isDuanjuProviderSource(source) {
-		return []string{""}
-	}
-	return engine.downloader.providerCatalogCategories(ctx, source)
+	return []string{""}
 }
 
 func (engine *nativeEngine) loadSourceCatalogCategory(ctx context.Context, source, category string, pages int, rescanHead bool) error {

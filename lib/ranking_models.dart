@@ -15,16 +15,11 @@ class RankingBoard {
 
   /// 榜单 ID 一律是「站源前缀-榜单名」，前缀就是站源。
   ///
-  /// 之前这里写死了六个站源的 ID 清单，其余一律返回空串；原生核心新增的
-  /// 短剧站源榜单（芽果、猫果、饭果、观果、河果、星果、花果、牛果、皮果、伍果）
-  /// 因此全部解析不到站源，`CoreRepository` 授权时当成「不属于任何站源」直接拒绝，
-  /// 表现为这些榜单一条数据都没有。这里按前缀解析并归一化别名，新增榜单无需再改。
-  static const sourceAliases = {'huangguo': 'huangguoai'};
-
+  /// 现在只有红果，其余前缀一律解析为空串：原生核心也只会为红果返回榜单，
+  /// 解析不到站源时上层会按「不属于任何站源」直接拒绝。
   static String sourceForID(String id) {
     final prefix = id.split('-').first.trim().toLowerCase();
-    final source = sourceAliases[prefix] ?? prefix;
-    return SourceSite.isKnown(source) ? source : '';
+    return SourceSite.isKnown(prefix) ? prefix : '';
   }
 
   factory RankingBoard.fromJson(Map<String, dynamic> json) => RankingBoard(

@@ -11,8 +11,6 @@ import 'catalog_browser.dart';
 import 'catalog_prefetch.dart';
 import 'catalog_sort.dart';
 import 'catalog_sort_sheet.dart';
-import 'feeds_screen.dart';
-import 'recommendation_service.dart';
 import 'recommendations_screen.dart';
 import 'rankings_screen.dart';
 import 'detail_screen.dart';
@@ -22,7 +20,6 @@ import 'lan_screen.dart';
 import 'models.dart';
 import 'remote_widgets.dart';
 import 'widgets.dart';
-import 'vip_icon.dart';
 import 'settings_screen.dart';
 import 'profiles_screen.dart';
 import 'search_input.dart';
@@ -45,10 +42,9 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   static const _recommendationCategory = 'app:recommendations';
   static const _tabDiscover = 0;
-  static const _tabFeed = 1;
-  static const _tabFollow = 2;
-  static const _tabHistory = 3;
-  static const _tabDownloads = 4;
+  static const _tabFollow = 1;
+  static const _tabHistory = 2;
+  static const _tabDownloads = 3;
   final _search = TextEditingController();
   final _scroll = ScrollController();
   final _prefetch = CatalogPrefetchScheduler();
@@ -419,7 +415,6 @@ class _HomeScreenState extends State<HomeScreen> {
     )..addListener(_updateChanged);
     _updater.startWatching();
     widget.repository.catalogUpdates.addListener(_metadataChanged);
-    RecommendationService.current?.attach(widget.store);
     if (widget.store.sources.isNotEmpty) {
       _load(useCache: true);
       _loadCategories();
@@ -430,7 +425,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    RecommendationService.current?.detach();
     _updater.removeListener(_updateChanged);
     _updater.dispose();
     _cacheRefreshTimer?.cancel();
@@ -903,10 +897,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  bool get _supportsVipFilter =>
-      _group.sources.any((source) => source.id == 'huangdou');
-  bool get _hideVip => _supportsVipFilter && widget.store.hideVip;
-
   List<Drama> get _visible {
     final query = _search.text.trim().toLowerCase();
     return sortCatalog(
@@ -914,9 +904,6 @@ class _HomeScreenState extends State<HomeScreen> {
         if (!widget.store.allowsSource(drama.source)) return false;
         if (_category.startsWith('local:') &&
             categoryName(drama.category) != _category.substring(6)) {
-          return false;
-        }
-        if (_hideVip && drama.source == 'huangdou' && drama.vip) {
           return false;
         }
         return _onlineSearch ||
@@ -936,7 +923,6 @@ class _HomeScreenState extends State<HomeScreen> {
         final desktop = constraints.maxWidth >= 840;
         final navEntries = <(int, IconData, String)>[
           (_tabDiscover, Icons.home_rounded, '主页'),
-          (_tabFeed, Icons.play_circle_rounded, '在看'),
           (_tabFollow, Icons.bookmark_rounded, '追剧'),
           (_tabHistory, Icons.history_rounded, '历史'),
           if (widget.store.canDownload)
@@ -992,7 +978,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   )
                 : Text(switch (_tab) {
-                    _tabFeed => '在看',
                     _tabFollow => '追剧',
                     _tabHistory => '历史',
                     _tabDownloads => '下载',
@@ -1014,13 +999,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: const Text('取消'),
                 ),
               ] else ...[
-                if (_tab == _tabFeed)
-                  IconButton(
-                    key: const ValueKey('feed-refresh'),
-                    tooltip: '刷新动态',
-                    onPressed: () => RecommendationService.current?.refresh(),
-                    icon: const Icon(Icons.refresh_rounded),
-                  ),
                 if (_tab == _tabFollow)
                   IconButton(
                     key: const ValueKey('follow-lan-sync'),
@@ -1216,11 +1194,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         label: Text('主页'),
                       ),
                       NavigationRailDestination(
-                        icon: Icon(Icons.play_circle_outline_rounded),
-                        selectedIcon: Icon(Icons.play_circle_rounded),
-                        label: Text('在看'),
-                      ),
-                      NavigationRailDestination(
                         icon: Icon(Icons.bookmark_border_rounded),
                         selectedIcon: Icon(Icons.bookmark_rounded),
                         label: Text('追剧'),
@@ -1247,15 +1220,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                 message: '请联系管理员为当前用户开放站源。',
                               )
                             : _catalog(selectionInBody: desktop || television)
-                      : _tab == _tabFeed
-                      ? FeedsScreen(
-                          key: const ValueKey('feed-tab'),
-                          repository: widget.repository,
-                          store: widget.store,
-                          onExitLeft: television
-                              ? () => _navKey.currentState?.focusCurrent()
-                              : null,
-                        )
                       : _tab == _tabDownloads
                       ? DownloadsScreen(
                           repository: widget.repository,
@@ -1296,11 +1260,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       icon: Icon(Icons.home_outlined),
                       selectedIcon: Icon(Icons.home_rounded),
                       label: '主页',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.play_circle_outline_rounded),
-                      selectedIcon: Icon(Icons.play_circle_rounded),
-                      label: '在看',
                     ),
                     NavigationDestination(
                       icon: Icon(Icons.bookmark_border_rounded),
@@ -1414,20 +1373,6 @@ class _HomeScreenState extends State<HomeScreen> {
               : null,
           onCategory: _changeCategory,
           onRetry: () => _loadCategories(force: true),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (_supportsVipFilter)
-                IconButton(
-                  tooltip: widget.store.hideVip ? 'VIP：隐藏' : 'VIP：显示',
-                  onPressed: () => saveUserChange(
-                    context,
-                    () => widget.store.setHideVip(!widget.store.hideVip),
-                  ),
-                  icon: VipIcon(hidden: widget.store.hideVip),
-                ),
-            ],
-          ),
         ),
         if (_showRecommendations)
           Expanded(
@@ -1478,9 +1423,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   : items.isEmpty
                   ? StatusPanel(
                       title: '没有找到匹配的短剧',
-                      message: _hideVip
-                          ? '可以换个搜索词，或显示 VIP 内容。'
-                          : widget.store.sources.length > 1
+                      message: widget.store.sources.length > 1
                           ? '可以换个搜索词或切换站源。'
                           : '可以换个搜索词，或刷新后重试。',
                       onRetry:

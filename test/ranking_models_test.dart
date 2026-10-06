@@ -1,65 +1,38 @@
-import 'package:duanju_app/app_build.dart';
 import 'package:duanju_app/models.dart';
 import 'package:duanju_app/ranking_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 原生核心 `provider_rankings.go` 的完整榜单表：榜单 ID → 站源。
-///
-/// 这份清单与 Go 侧一一对应，用来防止再次出现「Dart 只认识一部分榜单」的问题。
+/// 原生核心 `provider_rankings.go` 现在只提供红果榜单。
 const nativeBoardSources = <String, String>{
   'hongguo-hot': 'hongguo',
   'hongguo-real': 'hongguo',
   'hongguo-comic': 'hongguo',
   'hongguo-ai': 'hongguo',
-  'huangdou-all': 'huangdou',
-  'huangdou-mogai': 'huangdou',
-  'huangdou-search': 'huangdou',
-  'huangdou-favorite': 'huangdou',
-  'huangdou-finish': 'huangdou',
-  'huangguo-hot': 'huangguoai',
-  'huangguo-recommend': 'huangguoai',
-  'huangguo-potential': 'huangguoai',
-  'huangju-hot': 'huangju',
-  'huangju-new': 'huangju',
-  'yeguo-recommend': 'yeguo',
-  'dsd-catalog': 'dsd',
-  'yaguo-rank': 'yaguo',
-  'yaguo-theater': 'yaguo',
-  'maoguo-recommend': 'maoguo',
-  'fanguo-urban': 'fanguo',
-  'fanguo-sweet': 'fanguo',
-  'fanguo-counter': 'fanguo',
-  'guanguo-catalog': 'guanguo',
-  'heguo-sweet': 'heguo',
-  'heguo-xianxia': 'heguo',
-  'heguo-romance': 'heguo',
-  'xingguo-recommend': 'xingguo',
-  'huaguo-drama': 'huaguo',
-  'niuguo-drama': 'niuguo',
-  'niuguo-movie': 'niuguo',
-  'niuguo-tv': 'niuguo',
-  'niuguo-anime': 'niuguo',
-  'niuguo-variety': 'niuguo',
-  'piguo-hit': 'piguo',
-  'piguo-romance': 'piguo',
-  'piguo-costume': 'piguo',
-  'wuguo-urban': 'wuguo',
-  'wuguo-counter': 'wuguo',
-  'wuguo-travel': 'wuguo',
-  'wuguo-female': 'wuguo',
-  'wuguo-male': 'wuguo',
-  'chaoguo-hot': 'chaoguo',
-  'chaoguo-mainstream': 'chaoguo',
-  'chaoguo-adult': 'chaoguo',
-  'chaoguo-anime': 'chaoguo',
-  'chaoguo-urban': 'chaoguo',
-  'chaoguo-counter': 'chaoguo',
-  'chaoguo-costume': 'chaoguo',
-  'chaoguo-travel': 'chaoguo',
 };
 
+/// 随第三方站源一起下线的榜单 ID：即便还能解析出站源，也必须不可用，
+/// 否则会向原生核心发起一个它不再提供的请求。
+const retiredBoardIds = <String>[
+  'huangdou-all',
+  'huangguo-hot',
+  'huangju-hot',
+  'yeguo-recommend',
+  'dsd-catalog',
+  'yaguo-rank',
+  'maoguo-recommend',
+  'fanguo-urban',
+  'guanguo-catalog',
+  'heguo-sweet',
+  'xingguo-recommend',
+  'huaguo-drama',
+  'niuguo-drama',
+  'piguo-hit',
+  'wuguo-urban',
+  'chaoguo-hot',
+];
+
 void main() {
-  test('every native ranking board resolves to its real source', () {
+  test('every remaining native ranking board resolves to hongguo', () {
     final wrong = <String>[];
     for (final entry in nativeBoardSources.entries) {
       final resolved = RankingBoard.sourceForID(entry.key);
@@ -70,31 +43,29 @@ void main() {
     expect(wrong, isEmpty);
   });
 
-  test('board sources are known so授权不会误判为未知站源', () {
+  test('board sources are known so 授权不会误判为未知站源', () {
     for (final source in nativeBoardSources.values) {
       expect(
         SourceSite.isKnown(source),
         isTrue,
-        reason: '$source 未登记在 SourceSite.allValues 中',
+        reason: '$source 未登记在 SourceSite 中',
+      );
+      expect(
+        SourceSite.isAvailable(source),
+        isTrue,
+        reason: '$source 不在可用站源里',
       );
     }
   });
 
-  test('授权用的站源在全站源版本里都是可用站源', () {
-    for (final entry in nativeBoardSources.entries) {
-      final source = RankingBoard.sourceForID(entry.key);
+  test('retired ranking boards never resolve to an available source', () {
+    for (final id in retiredBoardIds) {
+      final source = RankingBoard.sourceForID(id);
       expect(
-        SourceSite.isKnown(source),
-        isTrue,
-        reason: '${entry.key} 解析出的站源 "$source" 会导致榜单被拒绝',
+        SourceSite.isAvailable(source),
+        isFalse,
+        reason: '$id 仍解析出可用站源 "$source"',
       );
-      if (allSourcesEnabled) {
-        expect(
-          SourceSite.isAvailable(source),
-          isTrue,
-          reason: '${entry.key} 解析出的站源 "$source" 不在可用站源里',
-        );
-      }
     }
   });
 
@@ -105,11 +76,11 @@ void main() {
 
   test('boards keep the source reported by the native core', () {
     final board = RankingBoard.fromJson(const {
-      'id': 'maoguo-recommend',
-      'source': 'maoguo',
-      'name': '推荐榜',
+      'id': 'hongguo-hot',
+      'source': 'hongguo',
+      'name': '总热播榜',
     });
-    expect(board.source, 'maoguo');
-    expect(board.groupId, 'maoguo');
+    expect(board.source, 'hongguo');
+    expect(board.groupId, 'hongguo');
   });
 }

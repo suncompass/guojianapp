@@ -104,7 +104,7 @@ void main() {
     final repository = FixtureRepository();
     await tester.pumpWidget(DuanjuApp(repository: repository, store: store));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('bottom-nav-2')));
+    await tester.tap(find.byKey(const ValueKey('bottom-nav-1')));
     await tester.pumpAndSettle();
     // 追剧页标题带条目数（「我的追剧 · N」），只断言前缀。
     expect(find.textContaining('我的追剧'), findsOneWidget);
@@ -132,12 +132,12 @@ void main() {
     await tester.tap(find.byType(BackButton).last);
     await tester.pumpAndSettle();
     expect(find.textContaining('我的追剧'), findsOneWidget);
-    // 新的底部导航顺序为 主页 / 在看 / 追剧 / 历史 / 下载，追剧是第 3 项。
+    // 底部导航顺序为 主页 / 追剧 / 历史 / 下载，追剧是第 2 项。
     expect(
       tester
           .widget<AppBottomNavigation>(find.byType(AppBottomNavigation))
           .selectedIndex,
-      2,
+      1,
     );
     final requests = repository.requests.length;
     await store.setThemeMode('system');

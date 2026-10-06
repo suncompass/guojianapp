@@ -2,7 +2,6 @@ import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/main.dart';
 import 'package:duanju_app/models.dart';
 import 'package:duanju_app/remote_widgets.dart';
-import 'package:duanju_app/app_build.dart';
 import 'package:duanju_app/follow_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -30,22 +29,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byTooltip('VIP：隐藏'), findsNothing);
       expect(find.text('测试短剧'), findsOneWidget);
-      if (allSourcesEnabled) {
-        await tester.tap(find.byKey(const ValueKey('source-switch')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('黄豆'));
-        await tester.pumpAndSettle();
-        expect(find.text('会员测试剧'), findsNothing);
-        expect(find.byTooltip('VIP：隐藏'), findsOneWidget);
-        await tester.tap(find.byTooltip('VIP：隐藏'));
-        await tester.pumpAndSettle();
-        expect(find.byTooltip('VIP：显示'), findsOneWidget);
-        expect(find.text('会员测试剧'), findsOneWidget);
-        await tester.tap(find.byTooltip('VIP：显示'));
-        await tester.pumpAndSettle();
-      } else {
-        expect(find.text('黄豆'), findsNothing);
-      }
+      expect(find.text('黄豆'), findsNothing);
       expect(find.text('会员测试剧'), findsNothing);
       await tester.tap(find.text('测试短剧'));
       await tester.pumpAndSettle();

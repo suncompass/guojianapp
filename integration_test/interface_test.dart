@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:duanju_app/home_screen.dart';
-import 'package:duanju_app/app_build.dart';
 import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/main.dart';
 import 'package:duanju_app/models.dart';
@@ -36,13 +35,6 @@ void main() {
           () => Future<void>.delayed(const Duration(seconds: 2)),
         );
         await binding.takeScreenshot(name);
-      }
-
-      Future<void> source(String name) async {
-        await tester.tap(find.byKey(const ValueKey('source-switch')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text(name).last);
-        await tester.pumpAndSettle();
       }
 
       await tester.pumpWidget(DuanjuApp(repository: repository, store: store));
@@ -84,25 +76,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byTooltip('更新剧库'), findsOneWidget);
 
-      if (allSourcesEnabled) {
-        await source('黄豆');
-        expect(find.byTooltip('VIP：隐藏'), findsOneWidget);
-        expect(find.text('会员合成剧'), findsNothing);
-        await capture('interface-huangdou-vip');
-        for (final name in ['黄果', '红果']) {
-          await source(name);
-          expect(find.textContaining('VIP：'), findsNothing);
-          expect(find.text('会员合成剧'), findsWidgets);
-        }
-      } else {
-        expect(find.text('黄豆'), findsNothing);
-        expect(find.text('红果'), findsOneWidget);
-      }
+      expect(find.text('黄豆'), findsNothing);
+      expect(find.text('红果'), findsOneWidget);
       await store.setThemeMode('dark');
       await tester.pumpAndSettle();
       await capture('interface-dark-catalog');
-      // 导航顺序为 主页 / 在看 / 追剧 / 历史 / 下载，下载页是第 5 项。
-      await tester.tap(find.byKey(const ValueKey('bottom-nav-4')));
+      // 导航顺序为 主页 / 追剧 / 历史 / 下载，下载页是第 4 项。
+      await tester.tap(find.byKey(const ValueKey('bottom-nav-3')));
       await tester.pumpAndSettle();
       await capture('interface-dark-downloads');
       await store.setThemeMode('light');
@@ -137,11 +117,10 @@ void main() {
       expect(tester.takeException(), isNull);
       binding.reportData ??= {};
       binding.reportData!['interface'] = {
-        'allSources': allSourcesEnabled,
         'systemThemeByDefault': true,
         'refreshAnimation': true,
         'alignedPosters': true,
-        'vipOnlyOnHuangdou': true,
+        'vipOnlyOnHongguo': true,
         'downloadMenuAboveFilters': true,
         'bulkPause': true,
         'downloadFilter': true,

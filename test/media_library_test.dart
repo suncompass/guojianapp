@@ -258,7 +258,7 @@ void main() {
   test(
     'real offline merge, CENC remux and Emby export remain playable after deleting inputs',
     () async {
-      final directory = await Directory.systemTemp.createTemp("真果鉴 '合成-");
+      final directory = await Directory.systemTemp.createTemp("红果鉴 '合成-");
       SharedPreferences.setMockInitialValues({});
       final store = LocalStore(await SharedPreferences.getInstance());
       final executor = ProcessMediaExecutor();

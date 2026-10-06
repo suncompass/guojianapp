@@ -62,10 +62,6 @@ jobs:
       - run: dart analyze lib test integration_test test_driver
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: flutter test --dart-define=DISABLE_REMOTE_IMAGES=true
-      # 全站源变体独立上报：默认测试失败时也要跑完，否则一套测试红就看不到另一套的结果。
-      - name: 全站源变体的 Flutter 测试
-        if: ${{ !cancelled() }}
-        run: flutter test --dart-define=DISABLE_REMOTE_IMAGES=true --dart-define=ALL_SOURCES=true
 
   go:
     runs-on: ubuntu-latest
@@ -78,21 +74,11 @@ jobs:
           cache-dependency-path: native/go.sum
       - run: go test -race ./...
         working-directory: native
-      - run: go test -race -ldflags="-X duanjuapp/native/core.buildAllSources=true" ./...
-        working-directory: native
 
   # 打包 job 不依赖上面三个检查 job：检查失败只影响状态，不阻塞出包。
   android:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - edition: hongguojian
-            arguments: ''
-          - edition: zhenguojian
-            arguments: '--all-sources'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -125,13 +111,13 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-      - run: python scripts/build_android.py ${{ matrix.arguments }}
+      - run: python scripts/build_android.py
       - name: Remove signing files
         if: always()
         run: python scripts/configure_signing.py --clean
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.edition }}-android
+          name: hongguojian-android
           path: dist/android/*
           if-no-files-found: error
           retention-days: 14
@@ -145,14 +131,6 @@ jobs:
   #   continue-on-error: true
   #   runs-on: windows-latest
   #   timeout-minutes: 45
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       include:
-  #         - edition: hongguojian
-  #           arguments: ''
-  #         - edition: zhenguojian
-  #           arguments: '--all-sources'
   #   steps:
   #     - uses: actions/checkout@v4
   #     - uses: actions/setup-go@v5
@@ -170,12 +148,12 @@ jobs:
   #     - uses: egor-tensin/setup-mingw@v2
   #       with:
   #         platform: x64
-  #     - run: python scripts/build_windows.py ${{ matrix.arguments }}
+  #     - run: python scripts/build_windows.py
   #     - run: choco install ffmpeg --no-progress -y
-  #     - run: python scripts/smoke_windows.py ${{ matrix.arguments }}
+  #     - run: python scripts/smoke_windows.py
   #     - uses: actions/upload-artifact@v4
   #       with:
-  #         name: ${{ matrix.edition }}-windows
+  #         name: hongguojian-windows
   #         path: dist/windows/*
   #         if-no-files-found: error
   #         retention-days: 14
@@ -185,14 +163,6 @@ jobs:
     continue-on-error: true
     runs-on: macos-latest
     timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - edition: hongguojian
-            arguments: ''
-          - edition: zhenguojian
-            arguments: '--all-sources'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -207,10 +177,10 @@ jobs:
           flutter-version: '3.47.4'
           channel: stable
           cache: true
-      - run: python3 scripts/build_ios.py ${{ matrix.arguments }}
+      - run: python3 scripts/build_ios.py
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.edition }}-ios-unsigned
+          name: hongguojian-ios-unsigned
           path: dist/ios/*
           if-no-files-found: error
           retention-days: 14

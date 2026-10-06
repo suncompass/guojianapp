@@ -15,28 +15,25 @@ void main() {
   const red = FixtureRepository.free;
   const other = FixtureRepository.vip;
 
-  test('edition sources include DSD only in the all-source build', () async {
+  test('retired third-party sources stay known but unavailable', () async {
     SharedPreferences.setMockInitialValues({'source': 'huangdou'});
     final store = LocalStore(await SharedPreferences.getInstance());
-    expect(appSlug, allSourcesEnabled ? 'zhenguojian' : 'hongguojian');
-    expect(
-      store.sources.length,
-      allSourcesEnabled ? SourceSite.knownValues.length : 1,
-    );
-    expect(
-      SourceSite.values.any((source) => source.id == 'dsd'),
-      allSourcesEnabled,
-    );
-    expect(SourceSite.isAvailable('dsd'), allSourcesEnabled);
-    expect(SourceSite.isKnown('dsd'), isTrue);
-    expect(SourceSite.byId('dsd').name, '帝果');
-    expect(store.allowsSource('dsd'), allSourcesEnabled);
-    expect(store.source, allSourcesEnabled ? 'huangdou' : 'hongguo');
+    expect(appSlug, 'hongguojian');
+    expect(store.sources.map((source) => source.id), ['hongguo']);
+    expect(SourceSite.values.map((source) => source.id), ['hongguo']);
+    expect(SourceSite.isAvailable('huangdou'), isFalse);
+    // 旧数据里出现过的站源必须仍然认得，否则升级后原有用户的站源权限会被判成无效。
+    expect(SourceSite.isKnown('huangdou'), isTrue);
+    expect(SourceSite.isKnown('chaoguo'), isTrue);
+    expect(SourceSite.isKnown('unknown'), isFalse);
+    expect(SourceSite.byId('huangdou').id, 'hongguo');
+    expect(store.allowsSource('huangdou'), isFalse);
+    expect(store.source, 'hongguo');
     store.dispose();
   });
 
   test(
-    'edition filtering preserves favorites and history through backup restore',
+    'records from retired sources survive backup restore without becoming available',
     () async {
       final history = [
         for (final drama in [red, other])
@@ -54,10 +51,11 @@ void main() {
         'history': jsonEncode(history),
       });
       final store = LocalStore(await SharedPreferences.getInstance());
-      expect(store.favorites.length, allSourcesEnabled ? 2 : 1);
-      expect(store.history.length, allSourcesEnabled ? 2 : 1);
-      expect(store.isFavorite(other.id), allSourcesEnabled);
-      expect(store.watched(other.id) != null, allSourcesEnabled);
+      // 停用站源的记录不再进入收藏与历史，但备份里原有的行不会被抹掉。
+      expect(store.favorites.length, 1);
+      expect(store.history.length, 1);
+      expect(store.isFavorite(other.id), isFalse);
+      expect(store.watched(other.id) != null, isFalse);
       await store.toggleFavorite(red);
       final backup = await store.exportBackup();
       final library =
@@ -68,17 +66,14 @@ void main() {
       expect(library['history'], hasLength(2));
       await store.importBackup(backup);
       expect(store.preferences.getString('source'), 'huangdou');
-      expect(store.history, hasLength(allSourcesEnabled ? 2 : 1));
-      expect(
-        store.favorites.map((drama) => drama.id),
-        allSourcesEnabled ? [other.id] : <String>[],
-      );
+      expect(store.history, hasLength(1));
+      expect(store.favorites.map((drama) => drama.id), isEmpty);
       store.dispose();
     },
   );
 
   test(
-    'a restored foreign-source profile keeps its identity and permissions',
+    'a restored retired-source profile keeps its identity and permissions',
     () async {
       SharedPreferences.setMockInitialValues({
         'profiles': jsonEncode([
@@ -100,18 +95,19 @@ void main() {
         'profile.viewer.source': 'huangdou',
       });
       final store = LocalStore(await SharedPreferences.getInstance());
+      expect(store.configurationError, isNull);
       expect(store.profile.id, 'viewer');
       expect(store.profile.admin, isFalse);
       expect(store.profile.sources, ['huangdou']);
       expect(store.canDownload, isFalse);
-      expect(store.source, allSourcesEnabled ? 'huangdou' : '');
+      expect(store.source, '');
       expect(store.allowsSource('hongguo'), isFalse);
-      expect(store.allowsSource('huangdou'), allSourcesEnabled);
+      expect(store.allowsSource('huangdou'), isFalse);
       store.dispose();
     },
   );
 
-  test('restored DSD profile data follows edition availability', () async {
+  test('retired DSD profile data stays readable after the source is gone', () async {
     SharedPreferences.setMockInitialValues({
       'profiles': jsonEncode([
         LocalProfile(
@@ -123,7 +119,7 @@ void main() {
         ).toJson(),
         const LocalProfile(
           id: 'viewer',
-          name: '帝果旧用户',
+          name: '旧用户',
           sources: ['dsd'],
           download: false,
         ).toJson(),
@@ -134,12 +130,9 @@ void main() {
     final store = LocalStore(await SharedPreferences.getInstance());
     expect(store.configurationError, isNull);
     expect(store.profile.sources, ['dsd']);
-    expect(
-      store.sources.map((source) => source.id),
-      allSourcesEnabled ? ['dsd'] : [],
-    );
-    expect(store.source, allSourcesEnabled ? 'dsd' : '');
-    expect(store.allowsSource('dsd'), allSourcesEnabled);
+    expect(store.sources, isEmpty);
+    expect(store.source, '');
+    expect(store.allowsSource('dsd'), isFalse);
     store.dispose();
   });
 

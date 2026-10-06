@@ -159,9 +159,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(repository.statusRequests, ['hongguo']);
       expect(find.byKey(const ValueKey('source-hongguo')), findsOneWidget);
-      for (final source in SourceSite.knownValues.skip(1)) {
-        expect(find.byKey(ValueKey('source-${source.id}')), findsNothing);
-      }
       await tester.pumpWidget(const SizedBox.shrink());
       store.dispose();
     },

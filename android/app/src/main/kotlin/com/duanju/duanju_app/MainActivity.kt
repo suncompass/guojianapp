@@ -9,8 +9,6 @@ import android.os.Bundle
 import android.os.BatteryManager
 import android.os.PowerManager
 import android.os.SystemClock
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -24,17 +22,6 @@ import android.util.Rational
 import android.view.InputDevice
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import java.security.KeyStore
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
-
-// Android Keystore 生成的 AES-GCM 密钥不会离开系统密钥库。
-private const val SECRET_KEY_ALIAS = "duanju.secret.v1"
-private const val SECRET_TRANSFORM = "AES/GCM/NoPadding"
-private const val SECRET_IV_BYTES = 12
-private const val SECRET_TAG_BITS = 128
 
 class MainActivity : FlutterActivity() {
     private var headroomReadAt = 0L
@@ -78,44 +65,6 @@ class MainActivity : FlutterActivity() {
         super.setRequestedOrientation(
             if (televisionMode) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else requestedOrientation
         )
-    }
-
-    private fun secretKey(): SecretKey {
-        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        val existing = store.getEntry(SECRET_KEY_ALIAS, null) as? KeyStore.SecretKeyEntry
-        if (existing != null) return existing.secretKey
-        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-        generator.init(
-            KeyGenParameterSpec.Builder(
-                SECRET_KEY_ALIAS,
-                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-            )
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(256)
-                .build()
-        )
-        return generator.generateKey()
-    }
-
-    // 输出固定为「12 字节 IV + 密文与认证标签」，存放位置由调用方决定。
-    private fun protectSecret(value: String): ByteArray {
-        val cipher = Cipher.getInstance(SECRET_TRANSFORM)
-        cipher.init(Cipher.ENCRYPT_MODE, secretKey())
-        val payload = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
-        return cipher.iv + payload
-    }
-
-    private fun unprotectSecret(blob: ByteArray): String? {
-        if (blob.size <= SECRET_IV_BYTES) return null
-        val cipher = Cipher.getInstance(SECRET_TRANSFORM)
-        cipher.init(
-            Cipher.DECRYPT_MODE,
-            secretKey(),
-            GCMParameterSpec(SECRET_TAG_BITS, blob, 0, SECRET_IV_BYTES)
-        )
-        val plaintext = cipher.doFinal(blob, SECRET_IV_BYTES, blob.size - SECRET_IV_BYTES)
-        return String(plaintext, Charsets.UTF_8)
     }
 
     private fun playbackPower(): Map<String, Any?> {
@@ -218,22 +167,6 @@ class MainActivity : FlutterActivity() {
                                 call.argument<Int>("right"),
                                 call.argument<Int>("bottom")
                             ))
-                        }
-                        "protectSecret" -> {
-                            val value = call.argument<String>("value")
-                            if (value == null) {
-                                result.error("invalid_secret", "缺少待保护的内容", null)
-                            } else {
-                                result.success(runCatching { protectSecret(value) }.getOrNull())
-                            }
-                        }
-                        "unprotectSecret" -> {
-                            val blob = call.argument<ByteArray>("blob")
-                            if (blob == null) {
-                                result.error("invalid_secret", "缺少待解密的内容", null)
-                            } else {
-                                result.success(runCatching { unprotectSecret(blob) }.getOrNull())
-                            }
                         }
                         else -> result.notImplemented()
                     }

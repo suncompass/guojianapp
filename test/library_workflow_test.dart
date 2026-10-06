@@ -70,7 +70,7 @@ void main() {
   });
 
   test(
-    'update scope respects compiled sources and keeps other starts after a failure',
+    'update scope follows the compiled source list',
     () async {
       final store = await create();
       final repository = LibraryFeatureRepository()
@@ -83,11 +83,6 @@ void main() {
         store.sources.map((source) => '${source.id}:update').toList(),
       );
       expect(updater.error('hongguo'), contains('合成站源启动失败'));
-      for (final source in store.sources.where(
-        (source) => source.id != 'hongguo',
-      )) {
-        expect(updater.busy(source.id), isTrue);
-      }
     },
   );
 

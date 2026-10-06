@@ -7,20 +7,18 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from app_build import BuildVariant, add_variant_argument
+from app_build import APP_SLUG
 
 root = Path(__file__).resolve().parents[1]
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    add_variant_argument(parser)
-    variant = BuildVariant(parser.parse_args().all_sources)
+    argparse.ArgumentParser().parse_args()
     if platform.system() != 'Windows':
         raise SystemExit('此检查需要 Windows。')
     version = re.search(r'^version:\s*(\S+)', (root / 'pubspec.yaml').read_text(), re.MULTILINE).group(1)
-    package = root / 'dist' / 'windows' / f'{variant.slug}-{version}-windows-x64.zip'
-    with tempfile.TemporaryDirectory(prefix='zhenguojian-smoke-') as temporary:
+    package = root / 'dist' / 'windows' / f'{APP_SLUG}-{version}-windows-x64.zip'
+    with tempfile.TemporaryDirectory(prefix='hongguojian-smoke-') as temporary:
         directory = Path(temporary)
         with zipfile.ZipFile(package) as archive:
             archive.extractall(directory)
@@ -29,7 +27,7 @@ def main():
                         '-i', 'testsrc2=size=160x90:rate=12', '-t', '3',
                         '-c:v', 'libx264', '-threads', '1', str(media)], check=True)
         report = directory / 'result.json'
-        subprocess.run([str(directory / (variant.slug + '.exe')), '--package-smoke', str(report), str(media)],
+        subprocess.run([str(directory / (APP_SLUG + '.exe')), '--package-smoke', str(report), str(media)],
                        cwd=directory, check=True, timeout=90)
         evidence = json.loads(report.read_text())
         if evidence.get('ok') is not True:

@@ -73,7 +73,6 @@ class LibraryUpdater extends ChangeNotifier {
           'update',
           'more',
           'metadata',
-          'vipMetadata',
           'retrySave',
         }.contains(status.operation) &&
         _delivered[status.source] != revision) {

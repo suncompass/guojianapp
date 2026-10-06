@@ -56,8 +56,8 @@ void main() {
     await tester.pumpAndSettle();
     await binding.convertFlutterSurfaceToImage();
     await capture('appearance-system-home');
-    // 导航顺序为 主页 / 在看 / 追剧 / 历史 / 下载，这里进「追剧」页截图。
-    await tester.tap(find.byKey(const ValueKey('bottom-nav-2')));
+    // 导航顺序为 主页 / 追剧 / 历史 / 下载，这里进「追剧」页截图。
+    await tester.tap(find.byKey(const ValueKey('bottom-nav-1')));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('更多'));
     await tester.pumpAndSettle();

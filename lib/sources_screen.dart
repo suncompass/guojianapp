@@ -301,12 +301,6 @@ class _SourcesScreenState extends State<SourcesScreen> {
                       child: const Text('继续加载一页'),
                     ),
                     const PopupMenuItem(value: 'metadata', child: Text('补齐资料')),
-                    if (source.id == 'huangdou')
-                      PopupMenuItem(
-                        value: 'vipMetadata',
-                        enabled: (status?.unknownVip ?? 0) > 0,
-                        child: Text('补齐 VIP 资料（${status?.unknownVip ?? 0} 部）'),
-                      ),
                     const PopupMenuItem(
                       value: 'checkCatalog',
                       child: Text('仅检测目录'),

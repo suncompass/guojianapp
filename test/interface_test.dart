@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:duanju_app/app_theme.dart';
-import 'package:duanju_app/app_build.dart';
 import 'package:duanju_app/core_bridge.dart';
 import 'package:duanju_app/downloads_screen.dart';
 import 'package:duanju_app/local_store.dart';
@@ -87,56 +86,6 @@ void main() {
     },
   );
 
-  testWidgets('only Huangdou exposes and applies the persistent VIP filter', (
-    tester,
-  ) async {
-    viewport(tester, const Size(390, 844));
-    final repository = InterfaceRepository();
-    final store = await localStore();
-    await tester.pumpWidget(DuanjuApp(repository: repository, store: store));
-    await tester.pumpAndSettle();
-    Future<void> select(String name) async {
-      if (SourceGroup.fromSources(SourceSite.values).length <= 1) return;
-      await tester.tap(find.byKey(const ValueKey('source-switch')));
-      await tester.pumpAndSettle();
-      // 站源分组变多后菜单会超出屏幕，先滚动到目标分组再点击，
-      // 否则点击落在屏幕外、菜单不关，下一轮会点到遮罩上。
-      final item = find.text(name).last;
-      await tester.ensureVisible(item);
-      await tester.pumpAndSettle();
-      await tester.tap(item);
-      await tester.pumpAndSettle();
-    }
-
-    for (final group in SourceGroup.fromSources(SourceSite.values)) {
-      await select(group.name);
-      if (group.id == 'huangdou') {
-        expect(find.text('会员合成剧'), findsNothing);
-        await tester.tap(find.byTooltip('VIP：隐藏'));
-        await tester.pumpAndSettle();
-        expect(find.text('会员合成剧'), findsOneWidget);
-      } else {
-        expect(find.byTooltip('VIP：隐藏'), findsNothing);
-        expect(find.byTooltip('VIP：显示'), findsNothing);
-        expect(find.text('会员合成剧'), findsWidgets);
-      }
-    }
-    if (!allSourcesEnabled) {
-      for (final source in SourceSite.knownValues.skip(1)) {
-        expect(find.widgetWithText(ChoiceChip, source.name), findsNothing);
-      }
-      return;
-    }
-    await select('黄豆');
-    expect(find.byTooltip('VIP：显示'), findsOneWidget);
-    await tester.tap(find.byTooltip('VIP：显示'));
-    await tester.pumpAndSettle();
-    expect(store.hideVip, isTrue);
-    await select('红果');
-    expect(find.text('会员合成剧'), findsOneWidget);
-    expect(find.textContaining('VIP：'), findsNothing);
-  });
-
   for (final layout in [
     (const Size(390, 844), 1.0, false),
     (const Size(320, 844), 2.0, false),
@@ -166,8 +115,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       Size? catalogSize;
-      // 导航顺序是 主页 / 在看 / 追剧 / 历史 / 下载，这里比对主页、追剧与历史三页的海报尺寸。
-      for (final tab in const [0, 2, 3]) {
+      // 导航顺序是 主页 / 追剧 / 历史 / 下载，这里比对主页、追剧与历史三页的海报尺寸。
+      for (final tab in const [0, 1, 2]) {
         if (tab > 0) {
           final destination = layout.$3
               ? find.byKey(ValueKey('tv-nav-$tab'))
@@ -175,7 +124,7 @@ void main() {
               ? find.byKey(ValueKey('bottom-nav-$tab'))
               : find.descendant(
                   of: find.byType(NavigationRail),
-                  matching: find.text(tab == 2 ? '追剧' : '历史'),
+                  matching: find.text(tab == 1 ? '追剧' : '历史'),
                 );
           await tester.tap(destination);
           await tester.pumpAndSettle();

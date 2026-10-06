@@ -20,10 +20,8 @@ import 'media_library.dart';
 import 'package_smoke.dart';
 import 'lan_controller.dart';
 import 'player_route.dart';
-import 'recommendation_service.dart';
 import 'player_screen.dart';
 import 'search_cache.dart';
-import 'secret_store.dart';
 import 'video_enhancement_assets.dart';
 
 Future<void> main(List<String> arguments) async {
@@ -68,8 +66,6 @@ class _AppBootstrapState extends State<AppBootstrap>
     LanController.current = null;
     MediaLibrary.current?.dispose();
     MediaLibrary.current = null;
-    RecommendationService.current?.dispose();
-    RecommendationService.current = null;
     store?.dispose();
     super.dispose();
   }
@@ -121,9 +117,6 @@ class _AppBootstrapState extends State<AppBootstrap>
     try {
       final preferences = await SharedPreferences.getInstance();
       await SearchResultCache.instance.initialize(preferences);
-      await SecretStore.initialize(preferences);
-      RecommendationService.current?.dispose();
-      RecommendationService.current = RecommendationService(preferences);
       await _refreshDevice();
       await repository.initialize();
       if (mounted) {

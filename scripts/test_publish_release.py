@@ -150,29 +150,28 @@ class PublishReleaseTests(unittest.TestCase):
         with mock.patch.object(client, 'command', side_effect=error):
             self.assertIsNone(client.release('latest'))
 
-    def test_collection_requires_both_android_editions_and_records_ios(self):
+    def test_collection_requires_an_android_package_and_records_ios(self):
         artifacts = self.root / 'artifacts'
-        first = artifacts / 'hongguojian-android' / 'hongguojian.apk'
-        first.parent.mkdir(parents=True)
-        first.write_bytes(b'hongguojian')
-        with self.assertRaisesRegex(ValueError, 'Both Android'):
-            prepare_assets(artifacts, self.root / 'incomplete', 'a' * 40, '123', '1', 'failure')
-        second = artifacts / 'zhenguojian-android' / 'zhenguojian.apk'
-        second.parent.mkdir(parents=True)
-        second.write_bytes(b'zhenguojian')
-        ios = artifacts / 'zhenguojian-ios-unsigned' / 'ios.zip'
+        ios = artifacts / 'hongguojian-ios-unsigned' / 'ios.zip'
         ios.parent.mkdir(parents=True)
         ios.write_bytes(b'unsigned-ios')
         unrelated = artifacts / 'format-patch' / 'unrelated.zip'
         unrelated.parent.mkdir(parents=True)
         unrelated.write_bytes(b'not a package')
+        with self.assertRaisesRegex(ValueError, 'Android APK'):
+            prepare_assets(artifacts, self.root / 'incomplete', 'a' * 40, '123', '1', 'failure')
+        apk = artifacts / 'hongguojian-android' / 'hongguojian.apk'
+        apk.parent.mkdir(parents=True)
+        apk.write_bytes(b'hongguojian')
         assets = prepare_assets(artifacts, self.root / 'release', 'a' * 40, '123', '2', 'success')
         manifest = next(path for name, path in assets.items() if name.endswith('.json'))
         data = json.loads(manifest.read_text(encoding='utf-8'))
         self.assertEqual(data['commit'], 'a' * 40)
         self.assertEqual(data['iosJobResult'], 'success')
-        self.assertEqual(len(data['packages']), 3)
-        self.assertTrue(all('-aaaaaaaaaaaa-123-2' in name for name in assets))
+        self.assertEqual(len(data['packages']), 2)
+        # 附件名只带这一次运行的编号，不带提交哈希。
+        self.assertTrue(all('-123-2' in name for name in assets))
+        self.assertFalse(any('aaaaaaaaaaaa' in name for name in assets))
         self.assertTrue(all(len(package['sha256']) == 64 for package in data['packages']))
         self.assertFalse(any('unrelated' in name for name in assets))
 

@@ -1,4 +1,3 @@
-import 'package:duanju_app/app_build.dart';
 import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/models.dart';
 import 'package:duanju_app/sources_screen.dart';
@@ -27,34 +26,35 @@ Future<LocalStore> mount(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('every 黄果 entrance forms its own card like other sources', (
-    tester,
-  ) async {
+  testWidgets('only the built-in source forms a card', (tester) async {
     final store = await mount(tester);
-    for (final id in ['huangguo-video', 'huangguoai', 'cloudfront']) {
-      final card = find.byKey(ValueKey('source-$id'));
-      await tester.scrollUntilVisible(
-        card,
-        300,
-        scrollable: find.byType(Scrollable).first,
+    expect(find.byKey(const ValueKey('source-hongguo')), findsOneWidget);
+    for (final id in [
+      'huangguo-video',
+      'huangguoai',
+      'cloudfront',
+      'huangdou',
+      'huangju',
+      'yeguo',
+      'dsd',
+      'chaoguo',
+    ]) {
+      expect(
+        find.byKey(ValueKey('source-$id')),
+        findsNothing,
+        reason: '$id 已随第三方站源一并删除',
       );
-      for (var i = 0; i < 6; i++) {
-        await tester.pump(const Duration(milliseconds: 50));
-      }
-      expect(card, findsOneWidget, reason: '$id 应与其他站源一样独立成卡片');
     }
-    expect(find.text('黄果'), findsNothing, reason: '不再使用黄果折叠分组');
     expect(find.byType(ExpansionTile), findsNothing);
     expect(store.sources.length, SourceSite.values.length);
     expect(tester.takeException(), isNull);
-    // 黄果系列入口只在 ALL_SOURCES 版本里编译，非全站源版本下这些卡片本就不存在。
-  }, skip: !allSourcesEnabled);
+  });
 
-  testWidgets('tapping a 黄果 card and its actions keeps the app alive', (
+  testWidgets('tapping the source card and its actions keeps the app alive', (
     tester,
   ) async {
     await mount(tester);
-    final card = find.byKey(const ValueKey('source-huangguo-video'));
+    final card = find.byKey(const ValueKey('source-hongguo'));
     await tester.scrollUntilVisible(
       card,
       300,
@@ -68,12 +68,12 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
     }
     expect(tester.takeException(), isNull);
-    final update = find.byKey(const ValueKey('update-huangguo-video'));
+    final update = find.byKey(const ValueKey('update-hongguo'));
     expect(update, findsOneWidget);
     await tester.tap(update);
     for (var i = 0; i < 8; i++) {
       await tester.pump(const Duration(milliseconds: 50));
     }
     expect(tester.takeException(), isNull);
-  }, skip: !allSourcesEnabled);
+  });
 }

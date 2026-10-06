@@ -1,5 +1,4 @@
 import java.util.Properties
-import java.util.Base64
 import java.security.MessageDigest
 import groovy.json.JsonSlurper
 
@@ -7,14 +6,6 @@ plugins {
     id("com.android.application")
     id("dev.flutter.flutter-gradle-plugin")
 }
-
-val dartDefines = providers.gradleProperty("dart-defines").orNull.orEmpty()
-    .split(",").filter { it.isNotEmpty() }
-    .associate {
-        val decoded = String(Base64.getDecoder().decode(it), Charsets.UTF_8)
-        decoded.substringBefore("=") to decoded.substringAfter("=", "")
-    }
-val allSources = dartDefines["ALL_SOURCES"] == "true"
 
 val releaseKey = rootProject.file("key.properties")
 val releaseProperties = Properties()
@@ -38,8 +29,8 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        manifestPlaceholders["appLabel"] = if (allSources) "真果鉴" else "红果鉴"
-        manifestPlaceholders["appBanner"] = if (allSources) "@drawable/tv_banner_all_sources" else "@drawable/tv_banner"
+        manifestPlaceholders["appLabel"] = "红果鉴"
+        manifestPlaceholders["appBanner"] = "@drawable/tv_banner"
     }
 
     signingConfigs {
@@ -93,16 +84,15 @@ val verifyNativeCore by tasks.registering {
                 ?: throw GradleException("不支持的 Android 目标架构：$target")
             val library = file("src/main/jniLibs/$abi/libduanju_core.so")
             val manifest = file("src/main/jniLibs/$abi/libduanju_core.build.json")
-            val command = "python3 scripts/build_android.py --abi $abi" +
-                if (allSources) " --all-sources" else ""
+            val command = "python3 scripts/build_android.py --abi $abi"
             if (!library.isFile || !manifest.isFile) {
                 throw GradleException("原生核心缺少构建记录，请运行：$command")
             }
             val metadata = JsonSlurper().parse(manifest) as? Map<*, *>
                 ?: throw GradleException("原生核心构建记录无效，请运行：$command")
-            if (metadata["format"] != 1 || metadata["allSources"] != allSources ||
+            if (metadata["format"] != 1 || metadata["allSources"] != false ||
                 metadata["platform"] != "android" || metadata["architecture"] != architecture) {
-                throw GradleException("应用与原生核心的站源配置不一致，请运行：$command")
+                throw GradleException("原生核心构建记录无效，请运行：$command")
             }
             val digest = MessageDigest.getInstance("SHA-256")
                 .digest(library.readBytes()).joinToString("") { "%02x".format(it) }

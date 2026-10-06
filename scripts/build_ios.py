@@ -6,10 +6,9 @@ import re
 import shlex
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
-from app_build import BuildVariant, add_variant_argument
+from app_build import APP_SLUG
 
 root = Path(__file__).resolve().parents[1]
 
@@ -18,7 +17,7 @@ def run(arguments, **kwargs):
     subprocess.run(arguments, cwd=kwargs.pop('cwd', root), check=True, **kwargs)
 
 
-def build_core(simulator=False, variant=BuildVariant()):
+def build_core(simulator=False):
     if platform.system() != 'Darwin':
         raise SystemExit('iOS 构建需要 macOS 和完整 Xcode。')
     go = shutil.which('go')
@@ -48,7 +47,7 @@ def build_core(simulator=False, variant=BuildVariant()):
             'GOOS': 'ios', 'GOARCH': architecture, 'CC': compiler,
             'CGO_CFLAGS': flags, 'CGO_LDFLAGS': flags,
         }
-        run([go, 'build', '-trimpath', '-buildmode=c-archive', '-ldflags=' + variant.linker_flags,
+        run([go, 'build', '-trimpath', '-buildmode=c-archive', '-ldflags=-s -w',
              '-o', str(output), './bridge'], cwd=root / 'native', env=build_env)
         shutil.copy2(output.with_suffix('.h'), headers / 'DuanjuCore.h')
         libraries.append((sdk, output, headers))
@@ -68,14 +67,12 @@ def build_core(simulator=False, variant=BuildVariant()):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='构建红果鉴 / 真果鉴 iOS 核心和应用')
+    parser = argparse.ArgumentParser(description='构建红果鉴 iOS 核心和应用')
     parser.add_argument('--core-only', action='store_true')
     parser.add_argument('--simulator', action='store_true', help='额外生成模拟器核心；不启动模拟器')
     parser.add_argument('--export-options', type=Path, help='使用自己的 Xcode 签名配置导出 IPA')
-    add_variant_argument(parser)
     options = parser.parse_args()
-    variant = BuildVariant(options.all_sources)
-    build_core(options.simulator, variant)
+    build_core(options.simulator)
     if options.core_only:
         return
     flutter = shutil.which('flutter')
@@ -91,19 +88,19 @@ def main():
         config = options.export_options.expanduser().resolve()
         if not config.is_file():
             raise SystemExit('ExportOptions.plist 不存在。')
-        run([flutter, 'build', 'ipa', '--release', '--no-pub', '--export-options-plist', str(config), *variant.flutter_arguments])
+        run([flutter, 'build', 'ipa', '--release', '--no-pub', '--export-options-plist', str(config)])
         for package in (root / 'build' / 'ios' / 'ipa').glob('*.ipa'):
-            destination = output / f'{variant.slug}-{version}-ios.ipa'
+            destination = output / f'{APP_SLUG}-{version}-ios.ipa'
             shutil.copy2(package, destination)
             artifacts.append(destination)
     else:
-        run([flutter, 'build', 'ios', '--release', '--no-codesign', '--no-pub', *variant.flutter_arguments])
+        run([flutter, 'build', 'ios', '--release', '--no-codesign', '--no-pub'])
         application = root / 'build' / 'ios' / 'iphoneos' / 'Runner.app'
         symbols = subprocess.check_output(['xcrun', 'nm', '-gU', str(application / 'Runner')], text=True)
         for symbol in ['_DuanjuRequest', '_DuanjuFree']:
             if symbol not in symbols:
                 raise SystemExit('iOS 包缺少 FFI 入口：' + symbol)
-        destination = output / f'{variant.slug}-{version}-ios-unsigned-app.zip'
+        destination = output / f'{APP_SLUG}-{version}-ios-unsigned-app.zip'
         run(['ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', str(application), str(destination)])
         artifacts.append(destination)
     if not artifacts:

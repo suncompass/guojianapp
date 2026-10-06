@@ -13,9 +13,7 @@ from urllib.parse import quote
 
 ARTIFACTS = {
     'hongguojian-android': ('hongguojian', 'android'),
-    'zhenguojian-android': ('zhenguojian', 'android'),
     'hongguojian-ios-unsigned': ('hongguojian', 'ios'),
-    'zhenguojian-ios-unsigned': ('zhenguojian', 'ios'),
 }
 
 
@@ -32,10 +30,12 @@ def prepare_assets(artifacts, output, commit, run_id, attempt, ios_result):
         raise ValueError('Invalid commit SHA')
     if not str(run_id).isdigit() or not str(attempt).isdigit():
         raise ValueError('Invalid workflow run identity')
-    suffix = f'{commit[:12]}-{run_id}-{attempt}'
+    # 附件名只带这一次 CI 运行的编号，不带提交哈希：同一轮运行的产物可重复校验，
+    # 重跑也不会覆盖上一轮已经公开的下载地址。
+    suffix = f'{run_id}-{attempt}'
     output.mkdir(parents=True, exist_ok=True)
     assets, packages = {}, []
-    android_editions = set()
+    has_android_apk = False
     for artifact, (edition, platform) in ARTIFACTS.items():
         directory = artifacts / artifact
         for source in sorted(directory.rglob('*')):
@@ -43,7 +43,6 @@ def prepare_assets(artifacts, output, commit, run_id, attempt, ios_result):
                 continue
             if source.is_symlink() or source.stat().st_size == 0:
                 raise ValueError(f'Invalid package: {source}')
-            # A rerun never overwrites a previous build's public download URL.
             name = f'{source.stem}-{suffix}{source.suffix}'
             if name in assets:
                 raise ValueError(f'Duplicate package name: {name}')
@@ -56,9 +55,9 @@ def prepare_assets(artifacts, output, commit, run_id, attempt, ios_result):
                 'bytes': target.stat().st_size, 'sha256': sha256_file(target),
             })
             if platform == 'android' and source.suffix.lower() == '.apk':
-                android_editions.add(edition)
-    if android_editions != {'hongguojian', 'zhenguojian'}:
-        raise ValueError('Both Android editions are required before publishing')
+                has_android_apk = True
+    if not has_android_apk:
+        raise ValueError('Android APK is required before publishing')
     manifest = output / f'build-{suffix}.json'
     manifest.write_text(json.dumps({
         'commit': commit, 'runId': str(run_id), 'runAttempt': str(attempt),

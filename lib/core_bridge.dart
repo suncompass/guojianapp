@@ -13,7 +13,6 @@ import 'models.dart';
 import 'danmaku_models.dart';
 import 'background_downloads.dart';
 import 'local_store.dart';
-import 'app_build.dart';
 import 'source_status.dart';
 import 'ranking_models.dart';
 import 'cover_decoder.dart';
@@ -449,9 +448,8 @@ class NativeRepository extends AppRepository {
 
   @override
   Future<Drama?> supplementMetadata(Drama drama) async {
-    if (!(drama.source == 'hongguo' && drama.onlineDate.isEmpty ||
-        drama.source == 'huangdou' &&
-            (drama.heat.isEmpty || drama.vipStatus == null))) {
+    // 只有红果还需要补齐上线日期；黄豆的热度与 VIP 补齐随站源一并删除。
+    if (drama.source != 'hongguo' || drama.onlineDate.isNotEmpty) {
       return null;
     }
     final result = await _read('metadata', {
@@ -752,13 +750,7 @@ class NativeRepository extends AppRepository {
   @override
   Future<void> initialize() async {
     final directory = await getApplicationSupportDirectory();
-    final build = await _call({
-      'action': 'initialize',
-      'directory': directory.path,
-    });
-    if (build['allSources'] != allSourcesEnabled) {
-      throw AppFailure('应用与原生核心的站源版本不一致，请使用完整安装包重新安装');
-    }
+    await _call({'action': 'initialize', 'directory': directory.path});
     if (!background) await BackgroundDownloads.prepare();
     if (!background) {
       SystemProxyMonitor.start((value) async {
