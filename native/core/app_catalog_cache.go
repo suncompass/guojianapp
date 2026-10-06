@@ -84,6 +84,7 @@ func migrateNativeDrama(drama nativeDrama) nativeDrama {
 	if strings.Contains(strings.ToLower(drama.Cover), "huangguoai.com") {
 		drama.Cover = ""
 	}
+	drama = migrateDuanjuPayloadKey(drama)
 	drama.MetadataSchema = 1
 	return drama
 }

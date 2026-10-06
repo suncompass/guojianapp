@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"strings"
 	"time"
 )
 
 func nativeNeedsExtraMetadata(drama nativeDrama) bool {
-	return drama.Source == sourceHongguo && drama.OnlineDate == ""
+	return drama.Source == sourceHongguo && drama.OnlineDate == "" ||
+		drama.Source == sourceHuangdou && (drama.Heat == "" || drama.VIP == nil)
 }
 
 func (engine *nativeEngine) nativeExtraMetadata(ctx context.Context, drama nativeDrama) (nativeDrama, error) {
@@ -16,21 +18,46 @@ func (engine *nativeEngine) nativeExtraMetadata(ctx context.Context, drama nativ
 	if !valid {
 		return drama, errors.New("剧集信息无效")
 	}
-	if !nativeNeedsExtraMetadata(drama) || source != sourceHongguo {
+	if !nativeNeedsExtraMetadata(drama) {
 		return drama, nil
 	}
 	ctx, cancel := context.WithTimeout(context.WithValue(ctx, backgroundCatalogKey{}, true), 15*time.Second)
 	defer cancel()
-	if !hongguoNumericID.MatchString(id) {
-		return drama, errors.New("红果剧集 ID 无效")
-	}
-	body, err := engine.downloader.fetchProviderText(ctx, hongguoBaseURL+"/detail?series_id="+url.QueryEscape(id), hongguoBaseURL+"/")
-	if err != nil {
-		return drama, err
-	}
-	raw, err := parseHongguoSortDetail(body, id)
-	if err != nil {
-		return drama, err
+	var raw Drama
+	switch source {
+	case sourceHongguo:
+		if !hongguoNumericID.MatchString(id) {
+			return drama, errors.New("红果剧集 ID 无效")
+		}
+		body, err := engine.downloader.fetchProviderText(ctx, hongguoBaseURL+"/detail?series_id="+url.QueryEscape(id), hongguoBaseURL+"/")
+		if err != nil {
+			return drama, err
+		}
+		raw, err = parseHongguoSortDetail(body, id)
+		if err != nil {
+			return drama, err
+		}
+	case sourceHuangdou:
+		row, err := engine.downloader.huangdouDetail(ctx, id)
+		if err != nil {
+			return drama, err
+		}
+		raw = huangdouDramaFromMap(row)
+		if raw.Heat == "" && drama.Heat == "" {
+			var decoded any
+			err = newHuangdouAPIClient(engine.downloader).call(ctx, "/drama/list", map[string]any{
+				"keywords": firstNonEmpty(raw.Title, drama.Title), "page": "1", "page_size": "50",
+			}, &decoded)
+			if err != nil {
+				return drama, err
+			}
+			for _, candidate := range huangdouList(decoded) {
+				if strings.TrimPrefix(mapString(candidate, "id", "drama_id"), "rp_") == id {
+					raw = mergeDramaMetadata(huangdouDramaFromMap(candidate), raw)
+					break
+				}
+			}
+		}
 	}
 	if raw.ID == drama.ID {
 		drama = mergeNativeDrama(drama, nativeNormalize(raw))
