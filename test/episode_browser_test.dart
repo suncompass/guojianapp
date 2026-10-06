@@ -52,7 +52,9 @@ Widget _host(
 void _expectVisible(WidgetTester tester, int number) {
   final item = find.byKey(ValueKey('episode-$number'));
   expect(item.hitTestable(), findsOneWidget);
-  final grid = tester.getRect(find.byKey(const ValueKey('compact-episode-grid')));
+  final grid = tester.getRect(
+    find.byKey(const ValueKey('compact-episode-grid')),
+  );
   final rect = tester.getRect(item);
   expect(rect.top, greaterThanOrEqualTo(grid.top));
   expect(rect.bottom, lessThanOrEqualTo(grid.bottom));

@@ -499,11 +499,8 @@ class _EpisodeBrowserState extends State<EpisodeBrowser> {
                     itemExtent: extent,
                     spacing: 5,
                     padding: const EdgeInsets.fromLTRB(4, 6, 4, 4),
-                    itemBuilder: (_, index, node, onFocus) => _compactEpisode(
-                      index,
-                      node: node,
-                      onFocus: onFocus,
-                    ),
+                    itemBuilder: (_, index, node, onFocus) =>
+                        _compactEpisode(index, node: node, onFocus: onFocus),
                   )
                 : GridView.builder(
                     key: const ValueKey('compact-episode-grid'),

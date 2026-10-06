@@ -575,9 +575,11 @@ void main() {
       expect(repository.active, contains(previous));
       // 旧会话清理被阻塞也不影响下一集打开；首段进度推进后提示才退场。
       expect(
-        tester.widget<PlayerEpisodeTransition>(
-          find.byType(PlayerEpisodeTransition),
-        ).episodeNumber,
+        tester
+            .widget<PlayerEpisodeTransition>(
+              find.byType(PlayerEpisodeTransition),
+            )
+            .episodeNumber,
         2,
       );
       player.setBuffering(true);
@@ -585,9 +587,11 @@ void main() {
       await settleOperations(tester);
       expect(find.text('正在缓冲'), findsNothing);
       expect(
-        tester.widget<PlayerEpisodeTransition>(
-          find.byType(PlayerEpisodeTransition),
-        ).episodeNumber,
+        tester
+            .widget<PlayerEpisodeTransition>(
+              find.byType(PlayerEpisodeTransition),
+            )
+            .episodeNumber,
         2,
       );
       player.setBuffering(false);
@@ -629,9 +633,11 @@ void main() {
       expect(player.opened, hasLength(2));
       expect(repository.active, hasLength(1));
       expect(
-        tester.widget<PlayerEpisodeTransition>(
-          find.byType(PlayerEpisodeTransition),
-        ).episodeNumber,
+        tester
+            .widget<PlayerEpisodeTransition>(
+              find.byType(PlayerEpisodeTransition),
+            )
+            .episodeNumber,
         isNull,
       );
       await unmount(tester, player);
@@ -653,9 +659,9 @@ void main() {
     await settleOperations(tester);
     expect(find.text('暂时无法播放'), findsOneWidget);
     expect(
-      tester.widget<PlayerEpisodeTransition>(
-        find.byType(PlayerEpisodeTransition),
-      ).episodeNumber,
+      tester
+          .widget<PlayerEpisodeTransition>(find.byType(PlayerEpisodeTransition))
+          .episodeNumber,
       isNull,
     );
     await unmount(tester, player);
