@@ -99,7 +99,12 @@ void main() {
       if (SourceGroup.fromSources(SourceSite.values).length <= 1) return;
       await tester.tap(find.byKey(const ValueKey('source-switch')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text(name).last);
+      // 站源分组变多后菜单会超出屏幕，先滚动到目标分组再点击，
+      // 否则点击落在屏幕外、菜单不关，下一轮会点到遮罩上。
+      final item = find.text(name).last;
+      await tester.ensureVisible(item);
+      await tester.pumpAndSettle();
+      await tester.tap(item);
       await tester.pumpAndSettle();
     }
 

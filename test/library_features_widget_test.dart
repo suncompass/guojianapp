@@ -286,7 +286,11 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
       await tester.pump(const Duration(milliseconds: 150));
       await tester.pumpAndSettle();
-      expect(repository.requests.length, before);
+      // 首页预加载会在空闲时补下一页，因此不再要求请求数完全不变；
+      // 这里验证的是「更新只复用共享任务与磁盘缓存」，不会重取第一页。
+      expect(repository.pages.length, greaterThanOrEqualTo(before));
+      expect(repository.pages.skip(before), isNot(contains(1)));
+      expect(repository.pages.where((page) => page == 1), hasLength(1));
       expect(find.text('新发现的合成剧'), findsOneWidget);
       expect(store.following(first.id)!.newEpisodes, 3);
       expect(

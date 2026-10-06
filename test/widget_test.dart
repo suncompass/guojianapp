@@ -135,11 +135,15 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
     }
     await tester.pumpAndSettle();
-    expect(repository.pages, [4]);
+    // 首页预加载会在空闲时按提前量补下一页，这里只断言「从缓存页继续」，
+    // 不要求只取一次；关键是新鲜缓存不会回头重取第一页。
+    expect(repository.pages, contains(4));
+    expect(repository.pages, isNot(contains(1)));
     await tester.tap(find.byKey(const ValueKey('catalog-refresh')));
     await tester.pumpAndSettle();
-    expect(repository.pages, [4, 1]);
-    expect(repository.forced, [false, true]);
+    // 手动刷新是唯一一次强制请求，且第一页总共只取一次。
+    expect(repository.forced.where((forced) => forced), hasLength(1));
+    expect(repository.pages.where((page) => page == 1), hasLength(1));
     expect(tester.takeException(), isNull);
   });
 
