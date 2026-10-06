@@ -48,6 +48,14 @@ const nativeBoardSources = <String, String>{
   'wuguo-travel': 'wuguo',
   'wuguo-female': 'wuguo',
   'wuguo-male': 'wuguo',
+  'chaoguo-hot': 'chaoguo',
+  'chaoguo-mainstream': 'chaoguo',
+  'chaoguo-adult': 'chaoguo',
+  'chaoguo-anime': 'chaoguo',
+  'chaoguo-urban': 'chaoguo',
+  'chaoguo-counter': 'chaoguo',
+  'chaoguo-costume': 'chaoguo',
+  'chaoguo-travel': 'chaoguo',
 };
 
 void main() {

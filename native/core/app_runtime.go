@@ -640,13 +640,14 @@ func (engine *nativeEngine) nativeCatalog(ctx context.Context, input nativeInput
 		if !duanjuSupportsSearch(source) {
 			return result, fmt.Errorf("%s 暂不支持在线搜索，可在已加载内容中筛选", duanjuSourceName(source))
 		}
-		items, err := d.searchDuanju(ctx, source, query)
+		items, more, err := d.searchDuanjuPage(ctx, source, query, page)
 		if err != nil {
 			return result, err
 		}
 		for _, drama := range items {
 			result.Items = append(result.Items, nativeNormalize(drama))
 		}
+		result.HasMore = more
 		return result, nil
 	}
 	if query != "" {

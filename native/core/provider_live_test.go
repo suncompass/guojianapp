@@ -2,7 +2,9 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -97,6 +99,75 @@ func fetchLiveCatalogPage(ctx context.Context, d *Downloader, source string) ([]
 	default:
 		return nil, false, errNativeBuildSource
 	}
+}
+
+func TestLiveChaoguoCatalogSearchRankingAndDetail(t *testing.T) {
+	if os.Getenv("CHECK_LIVE_PROVIDERS") != "true" {
+		t.Skip("set CHECK_LIVE_PROVIDERS=true to touch live provider text APIs")
+	}
+	engine, err := newNativeEngine(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(engine.downloads.close)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	d := engine.downloader
+
+	first, more, err := d.fetchChaoguoCatalogPage(ctx, 1, "class:mainstream")
+	if err != nil || len(first) == 0 {
+		t.Fatalf("chaoguo catalog failed: count=%d more=%t err=%v", len(first), more, err)
+	}
+	second, _, err := d.fetchChaoguoCatalogPage(ctx, 2, "class:mainstream")
+	if err != nil || len(second) == 0 {
+		t.Fatalf("chaoguo second page failed: count=%d err=%v", len(second), err)
+	}
+	seen := map[string]bool{}
+	for _, drama := range append(append([]Drama{}, first...), second...) {
+		if drama.ID == "" || drama.Source != sourceChaoguo || drama.Title == "" {
+			t.Fatalf("chaoguo catalog item is incomplete: %+v", drama)
+		}
+		if seen[drama.ID] {
+			t.Fatalf("chaoguo paging repeated %s", drama.ID)
+		}
+		seen[drama.ID] = true
+	}
+
+	results, _, err := d.searchChaoguoPage(ctx, "长生", 1)
+	if err != nil || len(results) == 0 {
+		t.Fatalf("chaoguo search failed: count=%d err=%v", len(results), err)
+	}
+
+	for _, id := range []string{"chaoguo-hot", "chaoguo-urban"} {
+		board, found := findRankingBoard(id)
+		if !found {
+			t.Fatalf("chaoguo board %s is missing", id)
+		}
+		page, err := d.loadRankingPage(ctx, board, 1, true)
+		if err != nil || len(page.Items) == 0 {
+			t.Fatalf("chaoguo ranking %s failed: count=%d err=%v", id, len(page.Items), err)
+		}
+		for _, item := range page.Items {
+			if item.Drama.ID == "" || item.Drama.Source != sourceChaoguo || item.Drama.Cover != nil {
+				t.Fatalf("chaoguo ranking %s item is wrong: %+v", id, item.Drama)
+			}
+		}
+	}
+
+	drama, chapters, err := d.fetchChaoguoDetail(ctx, first[0].SourceID)
+	if err != nil || len(chapters) == 0 {
+		t.Fatalf("chaoguo detail failed: chapters=%d err=%v", len(chapters), err)
+	}
+	if drama.Title == "" || drama.EpisodeCount != json.Number(strconv.Itoa(len(chapters))) {
+		t.Fatalf("chaoguo detail metadata is wrong: %+v", drama)
+	}
+	for _, chapter := range chapters {
+		if !duanjuLooksLikeMedia(chapter.VideoURL) || chapter.Referer == "" {
+			t.Fatalf("chaoguo chapter is not directly playable: %+v", chapter)
+		}
+	}
+	t.Logf("chaoguo live ok: catalog=%d+%d search=%d hot=%d detail=%s chapters=%d",
+		len(first), len(second), len(results), 50, drama.ID, len(chapters))
 }
 
 func fetchLiveDetail(ctx context.Context, d *Downloader, source, sourceID string) (Drama, []Chapter, error) {

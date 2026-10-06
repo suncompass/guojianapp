@@ -12,7 +12,7 @@ func TestDuanjuRankingBoardsCoverEverySource(t *testing.T) {
 	want := map[string]int{
 		sourceYaguo: 2, sourceMaoguo: 1, sourceFanguo: 3, sourceGuanguo: 1,
 		sourceHeguo: 3, sourceXingguo: 1, sourceHuaguo: 1, sourceNiuguo: 5,
-		sourcePiguo: 3, sourceWuguo: 5,
+		sourcePiguo: 3, sourceWuguo: 5, sourceChaoguo: 8,
 	}
 	got := map[string]int{}
 	for _, board := range rankingBoards {
@@ -38,7 +38,7 @@ func TestDuanjuRankingBoardCategoriesMatchTheirSource(t *testing.T) {
 			continue
 		}
 		if board.path == "" {
-			if board.Source != sourceGuanguo {
+			if board.Source != sourceGuanguo && board.Source != sourceChaoguo {
 				t.Fatalf("%s has no category", board.ID)
 			}
 			continue

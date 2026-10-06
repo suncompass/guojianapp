@@ -63,6 +63,14 @@ var rankingBoards = []rankingBoard{
 	{ID: "wuguo-travel", Source: sourceWuguo, Name: "穿越榜", Description: "伍果穿越分类顺序，按源站返回顺序展示。", path: "穿越"},
 	{ID: "wuguo-female", Source: sourceWuguo, Name: "女频榜", Description: "伍果女频分类顺序，按源站返回顺序展示。", path: "女频"},
 	{ID: "wuguo-male", Source: sourceWuguo, Name: "男频榜", Description: "伍果男频分类顺序，按源站返回顺序展示。", path: "男频"},
+	{ID: "chaoguo-hot", Source: sourceChaoguo, Name: "热播榜", Description: "超短剧站点官方热播榜，按站点播放量排序。", upstreamKey: "rank"},
+	{ID: "chaoguo-mainstream", Source: sourceChaoguo, Name: "主流剧情榜", Description: "超短剧主流剧情分类顺序，按源站返回顺序展示。", path: "class:mainstream"},
+	{ID: "chaoguo-adult", Source: sourceChaoguo, Name: "成人向榜", Description: "超短剧成人向分类顺序，按源站返回顺序展示。", path: "class:adult"},
+	{ID: "chaoguo-anime", Source: sourceChaoguo, Name: "动漫风格榜", Description: "超短剧动漫风格分类顺序，按源站返回顺序展示。", path: "class:anime_ip"},
+	{ID: "chaoguo-urban", Source: sourceChaoguo, Name: "都市榜", Description: "超短剧都市题材顺序，按源站返回顺序展示。", path: "tag:都市"},
+	{ID: "chaoguo-counter", Source: sourceChaoguo, Name: "逆袭榜", Description: "超短剧逆袭题材顺序，按源站返回顺序展示。", path: "tag:逆袭"},
+	{ID: "chaoguo-costume", Source: sourceChaoguo, Name: "古风榜", Description: "超短剧古风题材顺序，按源站返回顺序展示。", path: "tag:古风"},
+	{ID: "chaoguo-travel", Source: sourceChaoguo, Name: "穿越榜", Description: "超短剧穿越题材顺序，按源站返回顺序展示。", path: "tag:穿越"},
 }
 
 type rankingItem struct {
@@ -208,6 +216,11 @@ func (d *Downloader) fetchRankingPage(ctx context.Context, board rankingBoard, p
 		}
 		return parseHuangguoRanking(body, board)
 	case sourceHuangju, sourceYeguo, sourceDSD:
+		return d.fetchCatalogRankingPage(ctx, board, page)
+	case sourceChaoguo:
+		if board.path == "" {
+			return d.fetchChaoguoRankingPage(ctx, board, page)
+		}
 		return d.fetchCatalogRankingPage(ctx, board, page)
 	default:
 		if isDuanjuProviderSource(board.Source) {

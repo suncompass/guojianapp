@@ -8,6 +8,7 @@ import 'app_bottom_navigation.dart';
 import 'core_bridge.dart';
 import 'catalog_filters.dart';
 import 'catalog_browser.dart';
+import 'catalog_prefetch.dart';
 import 'catalog_sort.dart';
 import 'catalog_sort_sheet.dart';
 import 'feeds_screen.dart';
@@ -50,6 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
   static const _tabDownloads = 4;
   final _search = TextEditingController();
   final _scroll = ScrollController();
+  final _prefetch = CatalogPrefetchScheduler();
   Timer? _debounce;
   late SourceSite _source;
   bool _allSources = false;
@@ -395,7 +397,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_selectionMode) {
       _cancelSelection();
     } else if (_tab != _tabDiscover) {
-      setState(() => _tab = 0);
+      _changeTab(_tabDiscover);
     } else if (_search.text.isNotEmpty) {
       _search.clear();
       _searchChanged('');
@@ -406,6 +408,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _scroll.addListener(_onCatalogScroll);
+    _prefetch.onIdle = () => unawaited(_prefetchCatalog());
     _source = SourceSite.byId(widget.store.source);
     _allSources = widget.store.catalogView.allSources;
     _browser = CatalogBrowser(widget.repository);
@@ -440,6 +443,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _debounce?.cancel();
     _search.dispose();
     _scroll.removeListener(_onCatalogScroll);
+    _prefetch.dispose();
     _scroll.dispose();
     _appBarFocus.dispose();
     _selectionFocus.dispose();
@@ -447,6 +451,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onCatalogScroll() {
+    if (mounted && _scroll.hasClients) {
+      _prefetch.scrolled(
+        extentAfter: _scroll.position.extentAfter,
+        viewport: _scroll.position.viewportDimension,
+      );
+    }
     if (!mounted ||
         _showRecommendations ||
         !_hasMore ||
@@ -471,6 +481,34 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       unawaited(_load(more: true));
     });
+  }
+
+  bool get _canPrefetch =>
+      mounted &&
+      _tab == _tabDiscover &&
+      !_showRecommendations &&
+      _hasMore &&
+      !_loading &&
+      !_loadingMore &&
+      _error == null &&
+      _scroll.hasClients &&
+      (ModalRoute.of(context)?.isCurrent ?? true) &&
+      (!_onlineSearch || _search.text.trim() == _submittedQuery);
+
+  void _schedulePrefetch() {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients) return;
+      _prefetch.settled(
+        extentAfter: _scroll.position.extentAfter,
+        viewport: _scroll.position.viewportDimension,
+      );
+    });
+  }
+
+  Future<void> _prefetchCatalog() async {
+    if (!_canPrefetch) return;
+    await _load(more: true);
   }
 
   void _metadataChanged() {
@@ -617,6 +655,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } finally {
       if (generation == _generation) _stopProgressPolling();
     }
+    _schedulePrefetch();
   }
 
   void _startProgressPolling(SourceGroup group, String query, int generation) {
@@ -757,11 +796,19 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _changeTab(int tab) => setState(() {
-    _tab = tab;
-    _selectionMode = false;
-    _selectedDramas.clear();
-  });
+  void _changeTab(int tab) {
+    if (tab == _tabDiscover) {
+      _prefetch.resume();
+      _schedulePrefetch();
+    } else {
+      _prefetch.hold();
+    }
+    setState(() {
+      _tab = tab;
+      _selectionMode = false;
+      _selectedDramas.clear();
+    });
+  }
 
   void _cancelSelection() => setState(() {
     _selectionMode = false;

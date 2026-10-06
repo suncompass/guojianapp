@@ -17,6 +17,7 @@ const (
 	sourceNiuguo  = "niuguo"
 	sourcePiguo   = "piguo"
 	sourceWuguo   = "wuguo"
+	sourceChaoguo = "chaoguo"
 
 	duanjuMaxBodyBytes = 8 * 1024 * 1024
 	duanjuUserAgent    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
@@ -37,6 +38,7 @@ var (
 	niuguoParseURL2 = "http://101.42.92.211:5560"
 	piguoBaseURL    = "https://ptt.red"
 	wuguoBaseURL    = "https://www.duanju55.com"
+	chaoguoBaseURL  = "https://www.shanekids.com"
 )
 
 type duanjuSourceSpec struct {
@@ -63,6 +65,7 @@ var duanjuProviderCatalog = []duanjuSourceSpec{
 	{ID: sourceNiuguo, Name: "牛果", Base: niuguoBaseURL, Kind: "api", Searcher: true, Paged: true},
 	{ID: sourcePiguo, Name: "皮果", Base: piguoBaseURL, Kind: "maccms", Searcher: true, Paged: true, Browser: true},
 	{ID: sourceWuguo, Name: "伍果", Base: wuguoBaseURL, Kind: "maccms", Searcher: true, Paged: true},
+	{ID: sourceChaoguo, Name: "超果", Base: chaoguoBaseURL, Kind: "web", Searcher: true, Paged: true},
 }
 
 var duanjuMarkupPattern = regexp.MustCompile(`<[^>]{1,80}>`)
@@ -94,6 +97,8 @@ var duanjuSourceAliases = map[string]string{
 	"niuguo": "niuguo", "niuniu": sourceNiuguo, "牛牛": sourceNiuguo,
 	"piguo": "piguo", "ptt": sourcePiguo, "ptt.red": sourcePiguo,
 	"wuguo": "wuguo", "wuwu": sourceWuguo, "五五": sourceWuguo, "www.duanju55.com": sourceWuguo,
+	"chaoguo": "chaoguo", "chaoduanju": sourceChaoguo, "超短剧": sourceChaoguo, "超果": sourceChaoguo,
+	"shanekids": sourceChaoguo, "www.shanekids.com": sourceChaoguo, "shanekids.com": sourceChaoguo,
 }
 
 var duanjuSourcesByName = func() map[string]duanjuSourceSpec {
@@ -155,6 +160,8 @@ func duanjuSourceForHost(host string) string {
 		return sourcePiguo
 	case host == "www.duanju55.com" || host == "duanju55.com":
 		return sourceWuguo
+	case host == "www.shanekids.com" || host == "shanekids.com":
+		return sourceChaoguo
 	default:
 		return ""
 	}
@@ -179,6 +186,8 @@ func validDuanjuCategory(source, category string) bool {
 		return webProviderNumericID.MatchString(strings.SplitN(category, "-", 2)[0])
 	case sourceFanguo, sourceGuanguo:
 		return true
+	case sourceChaoguo:
+		return validChaoguoCategory(category)
 	default:
 		return true
 	}
@@ -297,6 +306,24 @@ var duanjuStaticCategories = map[string][]duanjuCategory{
 		{ID: "现代都市", Name: "现代都市"},
 		{ID: "小人物", Name: "小人物"},
 		{ID: "AI漫", Name: "AI漫"},
+	},
+	sourceChaoguo: {
+		{ID: "class:mainstream", Name: "主流剧情"},
+		{ID: "class:adult", Name: "成人向"},
+		{ID: "class:anime_ip", Name: "动漫风格"},
+		{ID: "class:unknown", Name: "其他"},
+		{ID: "tag:都市", Name: "都市"},
+		{ID: "tag:高颜值", Name: "高颜值"},
+		{ID: "tag:现代", Name: "现代"},
+		{ID: "tag:剧情", Name: "剧情"},
+		{ID: "tag:古风", Name: "古风"},
+		{ID: "tag:校园", Name: "校园"},
+		{ID: "tag:逆袭", Name: "逆袭"},
+		{ID: "tag:职场", Name: "职场"},
+		{ID: "tag:甜宠", Name: "甜宠"},
+		{ID: "tag:穿越", Name: "穿越"},
+		{ID: "tag:玄幻", Name: "玄幻"},
+		{ID: "tag:重生", Name: "重生"},
 	},
 }
 

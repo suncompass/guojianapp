@@ -25,6 +25,7 @@ class SourceSite {
     'fanguo',
     'heguo',
     'xingguo',
+    'chaoguo',
   }.contains(id);
   bool get searchSuggestions => id == 'hongguo';
   String get groupId => switch (id) {
@@ -52,6 +53,7 @@ class SourceSite {
     SourceSite('niuguo', '牛果', '牛牛短剧 · 分类接口'),
     SourceSite('piguo', '皮果', 'PTT 短剧 · 网页目录'),
     SourceSite('wuguo', '伍果', '五五短剧 · 网页目录'),
+    SourceSite('chaoguo', '超果', '超短剧 · 网页目录'),
   ];
   static const knownValues = [
     hongguo,

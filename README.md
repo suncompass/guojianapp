@@ -1,6 +1,50 @@
 # 红果鉴 / 真果鉴
 
-Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.2.96+2102（开发快照）**。
+Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.2.99+2105（开发快照）**。
+
+### 0.2.99：修正首页预加载时序与超果完结判定
+
+- 超果完结判定：`N/M 可播放` 原来把分子当总集数、分母当可播放集数，于是分母不小于分子就判完结——`2/43 可播放`（只放出前几集）会被标成「已完结」，污染完结筛选。现按分子=可播放、分母=页面标注集数比较，只有整部可播放才判完结；分母仅在页面没有集数标注时兜底为集数。
+
+- 预加载布局时序：`_load` 收尾原来同步调用 `_schedulePrefetch()`，冷启动时列表控件尚未挂载、或尺寸还是追加前的旧值，于是首屏不足两屏时不补页、余量充足时又提前补页。现改为在下一帧布局结束后再判断提前量。
+
+- 预加载准入：`_canPrefetch` 增加三项约束——上一轮加载报错时不自动续页，避免对故障站源反复取页；当前路由不是最上层时不取页，覆盖打开详情、榜单、站源诊断等首页仍挂载的场景；在线搜索下输入框内容与已提交查询不一致时不取页，避免未提交的关键词被当作续页查询发出并替换列表。
+
+- 电视端返回：返回键切回主页原来直接改写 `_tab`，绕过 `_changeTab`，既不清选择态也不恢复预加载；现统一走 `_changeTab(_tabDiscover)`。
+
+- 测试：`test/widget_test.dart` 增加「冷启动首屏不足两屏时自动续取下一页」，用新鲜磁盘缓存加单条内容断言首轮布局后自动取缓存页的下一页（旧实现在该场景不会发起请求）；`native/core/provider_duanju_chaoguo_test.go` 增加完结比例与集数口径两个用例。
+
+- 集数口径：详情返回的集数是可播放分集数，这是全站源既有约定（`nativeDetail` 对所有站源写入 `len(chapters)`）；页面标注的总集数只留在解析层，不是本次新增的偏差。
+
+- 验证：本机无 Go / Dart 工具链，`python3` 为 Windows 应用商店占位符，Go 与 Flutter 用例、静态检查与收尾脚本只能由 CI 或具备工具链的机器执行。
+
+### 0.2.98：接入第 11 个短剧站源「超果」
+
+- 来源：源项目（0.2.92）的超果实现。Go 侧新增 `native/core/provider_duanju_chaoguo.go`（491 行）与 `provider_duanju_chaoguo_test.go`（187 行），两者与源项目逐字节一致；注册表、别名、host 识别、分类白名单、静态分类与 dispatch 的三个分支落在既有文件，也是源项目对应 hunk 的逐字合并。
+
+- 站源能力：站点 `https://www.shanekids.com` 是服务端渲染 HTML、没有接口文档，因此按页面语义解析——卡片取 `a.card[href^="/drama/"]`（`title` 是剧名、`.card-eps` 是集数、`.card-brief` 是简介），目录 `/explore?sort=hot&page=N`，分类沿用站点自带的 class（`mainstream` / `adult` / `anime_ip`）与 tag；详情页解析 `hero-meta`（⭐ 评分、集数、播放量、分类）、`chips`（标签）、`N/M 可播放`（完本判定）与 `button.ep-btn[data-src][data-seq]`（分集与真实媒体地址）；搜索走 `/explore?q=…&page=N`，首页空结果报错、后续页空结果静默；榜单取 `/rank`（热播榜，单页）与分类顺序榜。
+
+- 接线：新增 `sourceChaoguo` 常量与 `chaoguoBaseURL`，目录注册项 `{ID: sourceChaoguo, Name: "超果", Kind: "web", Searcher: true, Paged: true}`，别名 `chaoguo` / `chaoduanju` / `超短剧` / `超果` / `shanekids` / `www.shanekids.com` / `shanekids.com`，host 识别 `www.shanekids.com`；分类白名单区分 `class:` 与 `tag:` 前缀（tag 限 16 字且只允许字母数字、汉字、`-`、`_`），静态分类 20 项；榜单 8 项，其中 `chaoguo-hot` 走 `/rank`，其余按站点分类顺序取；dispatch 接入目录、详情与单页搜索。
+
+- 搜索分页：短剧站源搜索入口改为 `searchDuanjuPage(ctx, source, query, page)`，非超果源回退原有单页搜索，`native/core/app_runtime.go` 同时回填 `result.HasMore`，目录 `hasMore` 不再丢弃；配合 `lib/models.dart` 的 `duanjuPaged` 名单新增 `chaoguo`、`duanjuValues` 登记 `SourceSite('chaoguo', '超果', '超短剧 · 网页目录')`，Dart 侧只做站源登记与权限，界面不新增硬编码；`test/ranking_models_test.dart` 增补 8 个超果榜单到站源的映射。
+
+- 既有断言同步：`native/core/provider_duanju_test.go` 的站源数量断言由 10 改为 11（保留 0.2.93 的观果空详情修复）；`provider_rankings_duanju_test.go` 的榜单归属计数补 `sourceChaoguo: 8`，并允许 `chaoguo-hot` 没有分类（该榜走 `/rank`）；`provider_live_test.go` 增加 `TestLiveChaoguoCatalogSearchRankingAndDetail`（默认跳过，仅 `CHECK_LIVE_PROVIDERS=true` 时访问真实站点）。
+
+- 验证：本机无 Go / Dart 工具链，`go test -race ./...`（默认与 ALL_SOURCES 两个变体）、`flutter test` 与 `dart analyze` 由 CI 覆盖。合并后 `provider_duanju.go`、`provider_duanju_dispatch.go`、`provider_rankings.go`、`provider_rankings_duanju_test.go`、`provider_live_test.go`、`lib/models.dart`、`test/ranking_models_test.dart` 与源项目逐字节一致；`native/core/app_runtime.go` 只保留 0.2.94 的 `saveMu` 差异，`native/core/app_sources.go` 保留 0.2.90 的分页续载修复。
+
+### 0.2.97：合并源项目的首页懒加载预加载
+
+- 来源：源项目（0.2.92）的 `lib/catalog_prefetch.dart` 与 `test/catalog_prefetch_test.dart`。按约定范围只搬「首页预加载与其接线」，站源（超果 provider）与直播（`lib/live_*.dart`）本次不合并。
+
+- 改动：新增 `lib/catalog_prefetch.dart`，内容与源项目一致。`CatalogPrefetchScheduler` 在滚动期间只记录 `extentAfter` / `viewport` 并重置轮数，停止滚动 320ms（`idleDelay`）后进入空闲才补取下一页，单次空闲最多 3 轮（`maxRounds`）；提前量小于 2 屏（`bufferScreens`）才认为需要补页。`hold()` / `resume()` 用于离开与回到首页，`dispose()` 取消定时器并清空回调。
+
+- 接线：`lib/home_screen.dart` 新增 `final _prefetch = CatalogPrefetchScheduler();`，`initState` 把 `onIdle` 接到 `_prefetchCatalog()`，`_onCatalogScroll` 顶部把滚动位置喂给调度器，`_load` 收尾调用 `_schedulePrefetch()` 让每次取页完成后重新判断，`_changeTab` 由表达式体改为语句体——离开主页 `hold()`、回到主页 `resume()` 并在下一帧补一次调度。`_canPrefetch` 沿用原有约束：主页页签、非推荐聚合、还有下一页、当前不在加载、滚动已挂载。
+
+- 与原有滚动加载的关系：`_onCatalogScroll` 里基于 1.5 屏阈值的即时取页保留（电视端与快速滚动仍靠它），预加载只在其外补一条「停手即补」的路径；两者共用 `_load(more: true)` 的 `_loading / _loadingMore / _hasMore` 并发保护，不会重复发请求。
+
+- 测试：新增 `test/catalog_prefetch_test.dart`，8 项用例覆盖快速滚动期间不触发、提前量充足不取页、单次空闲不超过上限轮数、切页签重置轮数并暂停、返回首页解除暂停、首屏不足一屏时继续取页、视口不可用不判断、释放后不再回调。源测试用 `package:fake_async`，本仓库未声明该依赖且 CI 走 `flutter pub get --enforce-lockfile`，故改用 `testWidgets` 自带的假时钟（`tester.pump(时长)` 等价于 `fakeAsync.elapse`），用例语义与源项目一致。
+
+- 验证：本机无 Dart 工具链，`dart format` / `dart analyze` / `flutter test` 由 CI 的 `dart` job 覆盖（默认 + ALL_SOURCES 两个变体）。
 
 ### 0.2.96：播放器下方栏目可收起，发布脚本草稿读回修复
 

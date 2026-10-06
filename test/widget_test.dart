@@ -176,4 +176,24 @@ void main() {
     expect(restored.watched(FixtureRepository.free.id)?.episode, 2);
     expect(restored.isFavorite(FixtureRepository.free.id), isTrue);
   });
+
+  testWidgets('冷启动首屏不足两屏时自动续取下一页', (tester) async {
+    final repository = FixtureRepository();
+    repository.cachedPages['hongguo'] = CatalogPage(
+      [FixtureRepository.free],
+      fresh: true,
+      page: 3,
+      hasMore: true,
+    );
+    await tester.pumpWidget(
+      DuanjuApp(repository: repository, store: await store()),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('测试短剧'), findsOneWidget);
+    // 新鲜缓存不再请求第一页；首屏不足两屏时首轮布局后应由预加载接着取缓存页的下一页。
+    expect(repository.pages, isNot(contains(1)));
+    expect(repository.pages, isNotEmpty);
+    expect(repository.pages.first, 4);
+    expect(tester.takeException(), isNull);
+  });
 }

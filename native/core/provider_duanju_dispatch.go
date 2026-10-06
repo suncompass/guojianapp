@@ -85,6 +85,8 @@ func (d *Downloader) fetchDuanjuCatalogPage(ctx context.Context, source string, 
 		return d.fetchNiuguoCatalogPage(ctx, page, category)
 	case sourceHuaguo, sourceWuguo, sourcePiguo:
 		return d.fetchMaccmsCatalogPage(ctx, source, page, category)
+	case sourceChaoguo:
+		return d.fetchChaoguoCatalogPage(ctx, page, category)
 	}
 	return nil, false, errors.New("该站源暂未接入目录")
 }
@@ -108,6 +110,8 @@ func (d *Downloader) fetchDuanjuDetail(ctx context.Context, source, sourceID str
 		return d.fetchNiuguoDetail(ctx, sourceID)
 	case sourceHuaguo, sourceWuguo, sourcePiguo:
 		return d.fetchMaccmsDetail(ctx, source, sourceID)
+	case sourceChaoguo:
+		return d.fetchChaoguoDetail(ctx, sourceID)
 	}
 	return Drama{}, nil, errors.New("该站源暂未接入详情")
 }
@@ -131,8 +135,23 @@ func (d *Downloader) searchDuanju(ctx context.Context, source, query string) ([]
 		return d.searchNiuguo(ctx, query)
 	case sourceHuaguo, sourceWuguo, sourcePiguo:
 		return d.searchMaccms(ctx, source, query)
+	case sourceChaoguo:
+		items, _, err := d.searchChaoguoPage(ctx, query, 1)
+		return items, err
 	}
 	return nil, errors.New("该站源不支持在线搜索")
+}
+
+func (d *Downloader) searchDuanjuPage(ctx context.Context, source, query string, page int) ([]Drama, bool, error) {
+	source = canonicalProviderSource(source)
+	if source == sourceChaoguo {
+		if page < 1 {
+			page = 1
+		}
+		return d.searchChaoguoPage(ctx, query, page)
+	}
+	items, err := d.searchDuanju(ctx, source, query)
+	return items, false, err
 }
 
 func duanjuSupportsSearch(source string) bool {
