@@ -45,17 +45,14 @@ class CategoryRepository extends FixtureRepository {
     bool force = false,
   }) async {
     categoryRequests.add('$source|$category|$page');
-    return CatalogPage(
-      [
-        Drama(
-          id: '$source:$category:$page',
-          source: source,
-          title: '$source · ${category.isEmpty ? '全部' : category}',
-          category: source == 'hongguo' ? '异能' : '',
-        ),
-      ],
-      page: page,
-    );
+    return CatalogPage([
+      Drama(
+        id: '$source:$category:$page',
+        source: source,
+        title: '$source · ${category.isEmpty ? '全部' : category}',
+        category: source == 'hongguo' ? '异能' : '',
+      ),
+    ], page: page);
   }
 
   @override

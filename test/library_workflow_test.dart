@@ -69,22 +69,18 @@ void main() {
     expect(store.sources.any((source) => updater.busy(source.id)), isFalse);
   });
 
-  test(
-    'update scope follows the compiled source list',
-    () async {
-      final store = await create();
-      final repository = LibraryFeatureRepository()
-        ..startFailures.add('hongguo');
-      final updater = LibraryUpdater(repository, store);
-      addTearDown(updater.dispose);
-      await updater.update(SourceSite.knownValues);
-      expect(
-        repository.starts,
-        store.sources.map((source) => '${source.id}:update').toList(),
-      );
-      expect(updater.error('hongguo'), contains('合成站源启动失败'));
-    },
-  );
+  test('update scope follows the compiled source list', () async {
+    final store = await create();
+    final repository = LibraryFeatureRepository()..startFailures.add('hongguo');
+    final updater = LibraryUpdater(repository, store);
+    addTearDown(updater.dispose);
+    await updater.update(SourceSite.knownValues);
+    expect(
+      repository.starts,
+      store.sources.map((source) => '${source.id}:update').toList(),
+    );
+    expect(updater.error('hongguo'), contains('合成站源启动失败'));
+  });
 
   test(
     'a late update response cannot attach to a changed user session',

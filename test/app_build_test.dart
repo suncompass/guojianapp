@@ -107,34 +107,37 @@ void main() {
     },
   );
 
-  test('retired DSD profile data stays readable after the source is gone', () async {
-    SharedPreferences.setMockInitialValues({
-      'profiles': jsonEncode([
-        LocalProfile(
-          id: 'default',
-          name: '管理员',
-          admin: true,
-          salt: '0' * 32,
-          pinHash: '1' * 64,
-        ).toJson(),
-        const LocalProfile(
-          id: 'viewer',
-          name: '旧用户',
-          sources: ['dsd'],
-          download: false,
-        ).toJson(),
-      ]),
-      'activeProfile': 'viewer',
-      'profile.viewer.source': 'dsd',
-    });
-    final store = LocalStore(await SharedPreferences.getInstance());
-    expect(store.configurationError, isNull);
-    expect(store.profile.sources, ['dsd']);
-    expect(store.sources, isEmpty);
-    expect(store.source, '');
-    expect(store.allowsSource('dsd'), isFalse);
-    store.dispose();
-  });
+  test(
+    'retired DSD profile data stays readable after the source is gone',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'profiles': jsonEncode([
+          LocalProfile(
+            id: 'default',
+            name: '管理员',
+            admin: true,
+            salt: '0' * 32,
+            pinHash: '1' * 64,
+          ).toJson(),
+          const LocalProfile(
+            id: 'viewer',
+            name: '旧用户',
+            sources: ['dsd'],
+            download: false,
+          ).toJson(),
+        ]),
+        'activeProfile': 'viewer',
+        'profile.viewer.source': 'dsd',
+      });
+      final store = LocalStore(await SharedPreferences.getInstance());
+      expect(store.configurationError, isNull);
+      expect(store.profile.sources, ['dsd']);
+      expect(store.sources, isEmpty);
+      expect(store.source, '');
+      expect(store.allowsSource('dsd'), isFalse);
+      store.dispose();
+    },
+  );
 
   test(
     'background requests reject unavailable sources before native I/O',

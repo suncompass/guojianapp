@@ -50,11 +50,7 @@ void main() {
         isTrue,
         reason: '$source 未登记在 SourceSite 中',
       );
-      expect(
-        SourceSite.isAvailable(source),
-        isTrue,
-        reason: '$source 不在可用站源里',
-      );
+      expect(SourceSite.isAvailable(source), isTrue, reason: '$source 不在可用站源里');
     }
   });
 
