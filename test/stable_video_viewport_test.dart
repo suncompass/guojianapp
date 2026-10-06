@@ -34,9 +34,7 @@ void main() {
             ),
           ),
         );
-        final surface = tester.renderObject<RenderBox>(
-          find.byKey(surfaceKey),
-        );
+        final surface = tester.renderObject<RenderBox>(find.byKey(surfaceKey));
         expect(surface.size, outputSize);
         final start = surface.localToGlobal(Offset.zero);
         final end = surface.localToGlobal(

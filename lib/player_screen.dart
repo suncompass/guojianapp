@@ -2093,7 +2093,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                       child: Visibility(
                         // 按实际动画位置隐藏，而不是点击即隐藏；快速反向
                         // 或旋转打断时也不会残留一个过期的“动画中”状态。
-                        visible: !_mobilePanelCollapsed ||
+                        visible:
+                            !_mobilePanelCollapsed ||
                             visibleHeight > _mobilePanelHeaderHeight + .01,
                         maintainState: true,
                         child: child!,
