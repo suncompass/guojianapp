@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/models.dart';
 import 'package:duanju_app/player_screen.dart';
+import 'package:duanju_app/player_episode_transition.dart';
 import 'package:duanju_app/app_layout.dart';
 import 'package:duanju_app/search_cache.dart';
 import 'package:flutter/foundation.dart';
@@ -59,6 +60,52 @@ class DownloadingRepository extends RouteRepository {
 
   @override
   Future<List<DownloadJob>> downloads() async => List.of(jobs);
+}
+
+class _TransitionRepository extends RouteRepository {
+  final nextReady = Completer<void>();
+  final cleanupReady = Completer<void>();
+  final releases = <String>[];
+  String? blockedRelease;
+  int nextRequests = 0;
+
+  @override
+  Future<PlaybackPlan> resolve(
+    Drama drama,
+    Episode episode, {
+    int quality = 0,
+  }) async {
+    if (episode.number == 2) {
+      nextRequests++;
+      await nextReady.future;
+    }
+    return super.resolve(drama, episode, quality: quality);
+  }
+
+  @override
+  Future<void> release(String session) async {
+    releases.add(session);
+    if (session == blockedRelease) await cleanupReady.future;
+    await super.release(session);
+  }
+}
+
+class _TransitionPlayer extends ScriptedPlayer {
+  int stops = 0;
+  Completer<void>? openGate;
+
+  @override
+  Future<void> stop() async {
+    stops++;
+    await super.stop();
+  }
+
+  @override
+  Future<void> open(Playable playable, {bool play = true}) async {
+    final gate = openGate;
+    if (gate != null) await gate.future;
+    await super.open(playable, play: play);
+  }
 }
 
 void main() {
@@ -479,6 +526,156 @@ void main() {
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
+  });
+
+  testWidgets('auto advance keeps media until replacement and defers cleanup', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      final repository = _TransitionRepository();
+      final player = _TransitionPlayer();
+      await mount(tester, repository, player, size: const Size(390, 844));
+      final previous = repository.active.single;
+      repository.blockedRelease = previous;
+      addTearDown(() {
+        if (!repository.cleanupReady.isCompleted) {
+          repository.cleanupReady.complete();
+        }
+      });
+      final stops = player.stops;
+      player.finishEpisode();
+      await settleOperations(tester);
+      expect(repository.nextRequests, 1);
+      expect(player.stops, stops);
+      expect(player.state.position, player.state.duration);
+      expect(repository.active, contains(previous));
+      expect(find.byKey(const ValueKey('player-loading-mask')), findsNothing);
+      expect(find.text('正在准备播放'), findsNothing);
+      expect(find.text('即将播放 · 第 2 集'), findsNothing);
+      await tester.pump(const Duration(milliseconds: 260));
+      await tester.pump(const Duration(milliseconds: 180));
+      expect(find.text('即将播放 · 第 2 集'), findsOneWidget);
+      // 重复的旧 completed 事件不能再发起一次解析。
+      player.finishEpisode();
+      await settleOperations(tester);
+      expect(repository.nextRequests, 1);
+
+      player.openGate = Completer<void>();
+      repository.nextReady.complete();
+      await settleOperations(tester);
+      expect(player.opened, hasLength(1));
+      expect(repository.releases, isNot(contains(previous)));
+      player.openGate!.complete();
+      await settleOperations(tester);
+      expect(player.opened, hasLength(2));
+      expect(player.stops, stops);
+      expect(player.state.playing, isTrue);
+      expect(repository.releases, contains(previous));
+      expect(repository.active, contains(previous));
+      // 旧会话清理被阻塞也不影响下一集打开；首段进度推进后提示才退场。
+      expect(
+        tester.widget<PlayerEpisodeTransition>(
+          find.byType(PlayerEpisodeTransition),
+        ).episodeNumber,
+        2,
+      );
+      player.setBuffering(true);
+      await player.seek(const Duration(milliseconds: 250));
+      await settleOperations(tester);
+      expect(find.text('正在缓冲'), findsNothing);
+      expect(
+        tester.widget<PlayerEpisodeTransition>(
+          find.byType(PlayerEpisodeTransition),
+        ).episodeNumber,
+        2,
+      );
+      player.setBuffering(false);
+      await settleOperations(tester);
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump();
+      expect(find.text('即将播放 · 第 2 集'), findsNothing);
+      repository.cleanupReady.complete();
+      await settleOperations(tester);
+      expect(repository.active, hasLength(1));
+      player.finishEpisode();
+      await settleOperations(tester);
+      expect(player.opened, hasLength(2), reason: '最后一集不再启动切换');
+      expect(player.state.playing, isFalse);
+      await unmount(tester, player);
+      expect(repository.active, isEmpty);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('manual selection supersedes a pending automatic transition', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      final repository = _TransitionRepository();
+      final player = _TransitionPlayer();
+      await mount(tester, repository, player, size: const Size(390, 844));
+      player.finishEpisode();
+      await settleOperations(tester);
+      await tester.tap(find.byKey(const ValueKey('play-episode-1')));
+      await settleOperations(tester);
+      expect(player.opened, hasLength(2));
+      final current = player.opened.last.uri;
+      repository.nextReady.complete();
+      await settleOperations(tester);
+      expect(player.opened.last.uri, current);
+      expect(player.opened, hasLength(2));
+      expect(repository.active, hasLength(1));
+      expect(
+        tester.widget<PlayerEpisodeTransition>(
+          find.byType(PlayerEpisodeTransition),
+        ).episodeNumber,
+        isNull,
+      );
+      await unmount(tester, player);
+      expect(repository.active, isEmpty);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('auto advance failure clears the transition hint', (
+    tester,
+  ) async {
+    final repository = _TransitionRepository();
+    final player = _TransitionPlayer();
+    await mount(tester, repository, player);
+    player.finishEpisode();
+    await settleOperations(tester);
+    repository.nextReady.completeError(StateError('unavailable'));
+    await settleOperations(tester);
+    expect(find.text('暂时无法播放'), findsOneWidget);
+    expect(
+      tester.widget<PlayerEpisodeTransition>(
+        find.byType(PlayerEpisodeTransition),
+      ).episodeNumber,
+      isNull,
+    );
+    await unmount(tester, player);
+    expect(repository.active, isEmpty);
+  });
+
+  testWidgets('leaving during automatic preparation releases the late plan', (
+    tester,
+  ) async {
+    final repository = _TransitionRepository();
+    final player = _TransitionPlayer();
+    await mount(tester, repository, player);
+    player.finishEpisode();
+    await settleOperations(tester);
+    await unmount(tester, player);
+    repository.nextReady.complete();
+    await settleOperations(tester);
+    expect(player.opened, hasLength(1));
+    expect(repository.active, isEmpty);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('collapsed panel follows auto advance and survives rotation', (

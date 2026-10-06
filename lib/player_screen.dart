@@ -28,6 +28,7 @@ import 'playback_preloader.dart';
 import 'playback_recovery.dart';
 import 'playback_preferences.dart';
 import 'player_controls.dart';
+import 'player_episode_transition.dart';
 import 'player_interactions.dart';
 import 'player_menu.dart';
 import 'player_panel_transition.dart';
@@ -143,6 +144,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _foreground = true;
   bool _playIntent = true;
   bool _showControlsOnPlaybackReady = true;
+  int? _transitionEpisode;
   bool _pendingError = false;
   bool _pictureInPictureSupported = false;
   bool _pictureInPictureActive = false;
@@ -189,6 +191,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     final previous = _phase.phase;
     if (!_phase.enter(next)) {
       assert(false, '非法的播放状态迁移: $previous -> $next');
+    }
+    if (next == PlaybackPhase.failed || next == PlaybackPhase.closed) {
+      _transitionEpisode = null;
     }
   }
 
@@ -367,7 +372,13 @@ class _PlayerScreenState extends State<PlayerScreen>
               _foreground &&
               !_panelOpen &&
               _index + 1 < widget.detail.episodes.length) {
-            _play(_index + 1, showControlsOnReady: false);
+            unawaited(
+              _play(
+                _index + 1,
+                showControlsOnReady: false,
+                automaticAdvance: true,
+              ),
+            );
           } else {
             _playIntent = false;
             _interactions.cancel();
@@ -861,7 +872,26 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   static const _coalesceInterval = Duration(milliseconds: 50);
 
+  void _syncEpisodeTransition() {
+    if (_transitionEpisode == null ||
+        !mounted ||
+        _closed ||
+        _loading ||
+        _error != null ||
+        _openedIndex != _index) {
+      return;
+    }
+    // open 完成不一定已经起播；等进度开始推进再退场，避免准备/缓冲提示跳闪。
+    // 后台或暂停意图无需等待进度，不能让提示一直留在静止画面上。
+    if (!_foreground ||
+        !_playIntent ||
+        (!_buffering && _player.state.position > Duration.zero)) {
+      setState(() => _transitionEpisode = null);
+    }
+  }
+
   void _syncPlayback() {
+    _syncEpisodeTransition();
     _syncDanmaku();
     _syncPreload();
     _syncScreenAwake();
@@ -1083,6 +1113,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     bool playWhenReady = true,
     PlaybackPlan? handoffPlan,
     bool showControlsOnReady = true,
+    bool automaticAdvance = false,
   }) async {
     if (_closed ||
         widget.store.profileEpoch != _profileEpoch ||
@@ -1090,6 +1121,14 @@ class _PlayerScreenState extends State<PlayerScreen>
         index >= widget.detail.episodes.length) {
       return;
     }
+    final continuous =
+        automaticAdvance &&
+        recoveryAction == null &&
+        handoffPlan == null &&
+        _openedIndex == _index &&
+        index == _index + 1 &&
+        _player.state.completed &&
+        _plan != null;
     _interactions.cancel();
     if (widget.handoff != null &&
         handoffPlan == null &&
@@ -1110,7 +1149,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             : null);
     _preloader.clear();
     final ticket = ++_generation;
-    _enhancement.suspend();
+    if (!continuous) _enhancement.suspend();
     _seekSequence++;
     _danmaku.setPlan(null);
     _acceptErrors = false;
@@ -1124,6 +1163,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     _resumePosition = position;
     _showControlsOnPlaybackReady = showControlsOnReady;
     setState(() {
+      _transitionEpisode = continuous
+          ? widget.detail.episodes[index].number
+          : null;
       _index = index;
       _setPhase(PlaybackPhase.opening);
       _error = null;
@@ -1139,6 +1181,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _attachLanPlayback();
     PlaybackPlan? prepared;
     PlaybackPlan? retained;
+    PlaybackPlan? departing;
     bool installed = false;
     try {
       await _serialize(() async {
@@ -1146,6 +1189,9 @@ class _PlayerScreenState extends State<PlayerScreen>
           return;
         }
         await _saveProgress(flush: true);
+        // 连播准备期间保留已结束的媒体，不先 stop 清空画面和音视频输出。
+        // 手动切集、重试和线路恢复仍使用原有的完整停止流程。
+        if (continuous) return;
         await _enhancement.beforeMedia();
         if (_closed || ticket != _generation) return;
         _openedIndex = -1;
@@ -1184,6 +1230,18 @@ class _PlayerScreenState extends State<PlayerScreen>
         if (plan.url.isEmpty) {
           throw AppFailure('站源未返回播放地址，请重试');
         }
+        if (continuous) {
+          await _enhancement.beforeMedia();
+          if (_closed || ticket != _generation) {
+            await widget.repository.release(plan.session);
+            return;
+          }
+          _openedIndex = -1;
+          departing = _plan;
+          _plan = null;
+          // Player.open 自身替换媒体；不要额外 stop，也不要让旧会话清理挡住起播。
+          // 旧会话继续有效，直到本次打开结束或中断后由 finally 释放。
+        }
         final platform = _player.platform;
         if (platform is NativePlayer) {
           for (final option in {
@@ -1211,6 +1269,10 @@ class _PlayerScreenState extends State<PlayerScreen>
             ].join(','),
           );
           await platform.setProperty('network-timeout', '20');
+        }
+        if (_closed || ticket != _generation) {
+          await widget.repository.release(plan.session);
+          return;
         }
         _plan = plan;
         installed = true;
@@ -1241,6 +1303,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   : PlaybackPhase.ready,
             );
           });
+          _syncEpisodeTransition();
           _danmaku.setPlan(plan);
           _syncDanmaku();
           _acknowledgeHandoff();
@@ -1276,6 +1339,11 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
       if (retained != null) {
         await widget.repository.release(retained!.session);
+      }
+      if (departing != null) {
+        await widget.repository
+            .release(departing!.session)
+            .catchError((Object _) {});
       }
     }
   }
@@ -1908,13 +1976,26 @@ class _PlayerScreenState extends State<PlayerScreen>
     final layeredControls = Stack(
       fit: StackFit.expand,
       children: [
-        if (_loading && !hideOverlayForPictureInPicture)
-          const ColoredBox(color: Colors.black),
+        if (_loading &&
+            _transitionEpisode == null &&
+            !hideOverlayForPictureInPicture)
+          const ColoredBox(
+            key: ValueKey('player-loading-mask'),
+            color: Colors.black,
+          ),
         if (!_loading && !hideOverlayForPictureInPicture)
           DanmakuOverlay(controller: _danmaku, aspectRatio: _aspectRatio),
         controls,
-        if ((_loading || _buffering) && !hideOverlayForPictureInPicture)
+        if ((_loading || _buffering) &&
+            _transitionEpisode == null &&
+            !hideOverlayForPictureInPicture)
           PlayerStatusMessage(message: _loading ? _loadingMessage : '正在缓冲'),
+        PlayerEpisodeTransition(
+          key: const ValueKey('player-episode-transition'),
+          episodeNumber: hideOverlayForPictureInPicture || _error != null
+              ? null
+              : _transitionEpisode,
+        ),
       ],
     );
     // 固定媒体层的布局约束，并在 LayoutBuilder 外构建，动画帧只改变
