@@ -173,28 +173,48 @@ class EpisodeBrowser extends StatefulWidget {
 
 class _EpisodeBrowserState extends State<EpisodeBrowser> {
   final _scroll = ScrollController();
+  final _rangeScroll = ScrollController();
+  final _indices = <int, int>{};
+  List<String>? _remoteItemKeys;
+  int _digits = 1;
+  int _indexedLength = 0;
   String _layout = '';
+  String _rangeLayout = '';
   int get _pageSize => episodePageSize;
-  late int _page =
-      max(
-        0,
-        widget.episodes.indexWhere((e) => e.number == widget.currentNumber),
-      ) ~/
-      _pageSize;
+  int _page = 0;
   int? _located;
+
+  // 剧集列表由详情数据替换；只在数据变化时扫描，开关面板不再遍历全集。
+  void _indexEpisodes() {
+    _indices.clear();
+    _digits = 1;
+    _indexedLength = widget.episodes.length;
+    _remoteItemKeys = null;
+    for (var index = 0; index < widget.episodes.length; index++) {
+      final number = widget.episodes[index].number;
+      _indices.putIfAbsent(number, () => index);
+      _digits = max(_digits, number.toString().length);
+    }
+    _layout = '';
+    _rangeLayout = '';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _indexEpisodes();
+    _page = (_indices[widget.currentNumber] ?? 0) ~/ _pageSize;
+  }
 
   @override
   void didUpdateWidget(EpisodeBrowser oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.currentNumber != widget.currentNumber) {
-      _page =
-          max(
-            0,
-            widget.episodes.indexWhere(
-              (episode) => episode.number == widget.currentNumber,
-            ),
-          ) ~/
-          _pageSize;
+    final changed =
+        !identical(oldWidget.episodes, widget.episodes) ||
+        _indexedLength != widget.episodes.length;
+    if (changed) _indexEpisodes();
+    if (changed || oldWidget.currentNumber != widget.currentNumber) {
+      _page = (_indices[widget.currentNumber] ?? 0) ~/ _pageSize;
       _located = null;
     }
     _page = _page.clamp(0, max(0, (widget.episodes.length - 1) ~/ _pageSize));
@@ -203,6 +223,7 @@ class _EpisodeBrowserState extends State<EpisodeBrowser> {
   @override
   void dispose() {
     _scroll.dispose();
+    _rangeScroll.dispose();
     super.dispose();
   }
 
@@ -319,47 +340,115 @@ class _EpisodeBrowserState extends State<EpisodeBrowser> {
     );
   }
 
+  void _locateCompact(int index) {
+    setState(() {
+      _located = widget.episodes[index].number;
+      // 重复点击同一分组也应重新定位，而不是被布局缓存忽略。
+      _layout = '';
+    });
+  }
+
   Widget _compactRangeSelector({required int target, required int pageCount}) {
     if (pageCount <= 1) return const SizedBox.shrink();
     final colors = Theme.of(context).colorScheme;
     final selectedPage = (target ~/ episodePageSize).clamp(0, pageCount - 1);
+    final itemWidth = max(
+      88.0,
+      MediaQuery.textScalerOf(context).scale(12) * (_digits * 2 + 1) * .65 + 26,
+    );
+    final layout =
+        '$selectedPage:$itemWidth:$pageCount:${MediaQuery.sizeOf(context).width}';
+    if (_rangeLayout != layout) {
+      _rangeLayout = layout;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_rangeScroll.hasClients || _rangeLayout != layout) {
+          return;
+        }
+        // 固定分组宽度，可直接定位后段分组，不构建前面的全部按钮。
+        _rangeScroll.jumpTo(
+          (4 +
+                  selectedPage * itemWidth -
+                  (_rangeScroll.position.viewportDimension - itemWidth) / 2)
+              .clamp(0.0, _rangeScroll.position.maxScrollExtent),
+        );
+      });
+    }
     return SizedBox(
       height: 34,
-      child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(4, 2, 4, 3),
-        scrollDirection: Axis.horizontal,
-        itemCount: pageCount,
-        separatorBuilder: (_, _) => const SizedBox(width: 6),
-        itemBuilder: (context, page) {
-          final start = page * episodePageSize;
-          final end = min(start + episodePageSize, widget.episodes.length) - 1;
-          final selected = page == selectedPage;
-          return OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size(0, 28),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              foregroundColor: selected ? colors.onPrimary : colors.onSurface,
-              backgroundColor: selected ? colors.primary : Colors.transparent,
-              side: BorderSide(
-                color: selected ? colors.primary : colors.outlineVariant,
-              ),
-              textStyle: const TextStyle(fontSize: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(7),
-              ),
+      child: Row(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              key: const ValueKey('compact-episode-ranges'),
+              controller: _rangeScroll,
+              padding: const EdgeInsets.fromLTRB(4, 2, 4, 3),
+              scrollDirection: Axis.horizontal,
+              itemExtent: itemWidth,
+              itemCount: pageCount,
+              itemBuilder: (context, page) {
+                final start = page * episodePageSize;
+                final end =
+                    min(start + episodePageSize, widget.episodes.length) - 1;
+                final selected = page == selectedPage;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(0, 28),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      foregroundColor: selected
+                          ? colors.onPrimary
+                          : colors.onSurface,
+                      backgroundColor: selected
+                          ? colors.primary
+                          : Colors.transparent,
+                      side: BorderSide(
+                        color: selected
+                            ? colors.primary
+                            : colors.outlineVariant,
+                      ),
+                      textStyle: const TextStyle(fontSize: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                    ),
+                    onPressed: () => _locateCompact(start),
+                    child: Text(
+                      '${widget.episodes[start].number}-${widget.episodes[end].number}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                );
+              },
             ),
-            onPressed: () {
-              setState(() {
-                _located = widget.episodes[start].number;
-              });
-            },
-            child: Text(
-              '${widget.episodes[start].number}-${widget.episodes[end].number}',
-            ),
-          );
-        },
+          ),
+          IconButton(
+            tooltip: '定位当前',
+            onPressed: _indices.containsKey(widget.currentNumber)
+                ? () => _locateCompact(_indices[widget.currentNumber]!)
+                : null,
+            icon: const Icon(Icons.my_location_rounded, size: 18),
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _compactEpisode(int index, {FocusNode? node, VoidCallback? onFocus}) {
+    final episode = widget.episodes[index];
+    return RemoteEpisodeButton(
+      key: ValueKey('${widget.keyPrefix}-${episode.number}'),
+      number: episode.number,
+      vip: episode.vip,
+      compact: true,
+      current:
+          widget.selectedNumbers?.contains(episode.number) ??
+          episode.number == widget.currentNumber,
+      focusNode: node,
+      onFocus: onFocus,
+      onPressed: () => widget.onSelected(index),
     );
   }
 
@@ -367,22 +456,13 @@ class _EpisodeBrowserState extends State<EpisodeBrowser> {
     builder: (context, constraints) {
       final television = AppLayout.isTelevision(context);
       final scale = MediaQuery.textScalerOf(context);
-      final digits = widget.episodes.fold<int>(
-        1,
-        (value, episode) => max(value, episode.number.toString().length),
-      );
-      final minimum = max(40.0, scale.scale(14) * digits * .62 + 22);
+      final minimum = max(40.0, scale.scale(14) * _digits * .62 + 22);
       final columns = ((constraints.maxWidth - 12) / minimum).floor().clamp(
-        5,
+        1,
         television ? 12 : 10,
       );
       final extent = max(34.0, scale.scale(14) + 18);
-      final target = max(
-        0,
-        widget.episodes.indexWhere(
-          (episode) => episode.number == (_located ?? widget.currentNumber),
-        ),
-      );
+      final target = _indices[_located ?? widget.currentNumber] ?? 0;
       final pageCount = (widget.episodes.length / episodePageSize).ceil();
       final layout =
           'compact:${widget.episodes.length}:$_located:${widget.currentNumber}:$columns:$extent:${constraints.maxHeight}';
@@ -390,10 +470,12 @@ class _EpisodeBrowserState extends State<EpisodeBrowser> {
         _layout = layout;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted || !_scroll.hasClients || _layout != layout) return;
+          // 必须与网格的 padding、行间距一致，使用扣除分组栏后的实际视口。
+          // 一像素的步长偏差也会在上千集时累积为几十行的定位误差。
           _scroll.jumpTo(
-            (target ~/ columns * (extent + 6) -
-                    constraints.maxHeight / 2 +
-                    extent / 2)
+            (6 +
+                    target ~/ columns * (extent + 5) -
+                    (_scroll.position.viewportDimension - extent) / 2)
                 .clamp(0.0, _scroll.position.maxScrollExtent),
           );
         });
@@ -402,34 +484,42 @@ class _EpisodeBrowserState extends State<EpisodeBrowser> {
         children: [
           _compactRangeSelector(target: target, pageCount: pageCount),
           Expanded(
-            child: RemoteGrid(
-              key: ValueKey('episode-continuous-$_located'),
-              controller: _scroll,
-              autofocus: television && _located != null,
-              initialIndex: target,
-              itemKeys: widget.episodes
-                  .map((episode) => '${episode.number}')
-                  .toList(),
-              columns: columns,
-              itemExtent: extent,
-              spacing: 5,
-              padding: const EdgeInsets.fromLTRB(4, 6, 4, 4),
-              itemBuilder: (_, index, node, onFocus) {
-                final episode = widget.episodes[index];
-                return RemoteEpisodeButton(
-                  key: ValueKey('${widget.keyPrefix}-${episode.number}'),
-                  number: episode.number,
-                  vip: episode.vip,
-                  compact: true,
-                  current:
-                      widget.selectedNumbers?.contains(episode.number) ??
-                      episode.number == widget.currentNumber,
-                  focusNode: node,
-                  onFocus: onFocus,
-                  onPressed: () => widget.onSelected(index),
-                );
-              },
-            ),
+            // 手机只保留视口附近的按钮/焦点，不像遥控网格那样累计已访问节点。
+            // 电视保留原有方向键导航，避免触屏优化改变遥控行为。
+            child: television
+                ? RemoteGrid(
+                    key: ValueKey('episode-continuous-$_located'),
+                    controller: _scroll,
+                    autofocus: _located != null,
+                    initialIndex: target,
+                    itemKeys: _remoteItemKeys ??= widget.episodes
+                        .map((episode) => '${episode.number}')
+                        .toList(),
+                    columns: columns,
+                    itemExtent: extent,
+                    spacing: 5,
+                    padding: const EdgeInsets.fromLTRB(4, 6, 4, 4),
+                    itemBuilder: (_, index, node, onFocus) => _compactEpisode(
+                      index,
+                      node: node,
+                      onFocus: onFocus,
+                    ),
+                  )
+                : GridView.builder(
+                    key: const ValueKey('compact-episode-grid'),
+                    controller: _scroll,
+                    padding: const EdgeInsets.fromLTRB(4, 6, 4, 4),
+                    cacheExtent: extent + 5,
+                    addAutomaticKeepAlives: false,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      mainAxisExtent: extent,
+                      crossAxisSpacing: 5,
+                      mainAxisSpacing: 5,
+                    ),
+                    itemCount: widget.episodes.length,
+                    itemBuilder: (_, index) => _compactEpisode(index),
+                  ),
           ),
         ],
       );

@@ -77,6 +77,7 @@ void main() {
     Size? size,
     FakeViewPadding? padding,
     ThemeData? theme,
+    VoidCallback? onVideoBuild,
   }) async {
     SharedPreferences.setMockInitialValues({});
     if (size != null) {
@@ -99,7 +100,10 @@ void main() {
           repository: repository,
           store: store,
           playerFactory: () => Player(platformPlayer: platform),
-          videoBuilder: (controls) => controls,
+          videoBuilder: (controls) {
+            onVideoBuild?.call();
+            return controls;
+          },
         ),
       ),
     );
@@ -376,6 +380,42 @@ void main() {
       },
     );
   }
+
+  testWidgets('panel animation does not rebuild the video on each frame', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      final repository = RouteRepository();
+      final player = ScriptedPlayer();
+      var builds = 0;
+      await mount(
+        tester,
+        repository,
+        player,
+        size: const Size(390, 844),
+        onVideoBuild: () => builds++,
+      );
+      await settleOperations(tester);
+      final toggle = find.byKey(const ValueKey('player-panel-toggle'));
+      final surface = find.byKey(const ValueKey('player-gesture-surface'));
+      for (var transition = 0; transition < 2; transition++) {
+        await tester.tap(toggle);
+        await tester.pump();
+        final initialBuilds = builds;
+        final height = tester.getSize(surface).height;
+        for (var frame = 0; frame < 10; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        expect(builds, initialBuilds);
+        expect(tester.getSize(surface).height, isNot(height));
+        await tester.pump(const Duration(milliseconds: 220));
+      }
+      await unmount(tester, player);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
 
   testWidgets('panel animation can reverse before collapse completes', (
     tester,

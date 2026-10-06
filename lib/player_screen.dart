@@ -30,6 +30,7 @@ import 'playback_preferences.dart';
 import 'player_controls.dart';
 import 'player_interactions.dart';
 import 'player_menu.dart';
+import 'player_panel_transition.dart';
 import 'screen_awake.dart';
 import 'search_cache.dart';
 import 'television_controls.dart';
@@ -1826,6 +1827,19 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
+  ({Size size, bool television})? _reportedViewport;
+
+  void _reportVideoViewport(Size pixels) {
+    final viewport = (size: pixels, television: _television);
+    if (_reportedViewport == viewport) return;
+    _reportedViewport = viewport;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_closed && _reportedViewport == viewport) {
+        _enhancement.setViewport(pixels, television: viewport.television);
+      }
+    });
+  }
+
   Widget _videoPane(BuildContext context, {Size? outputSize}) {
     final videoTheme = _television
         ? televisionTheme(AppTheme.dark)
@@ -1920,25 +1934,15 @@ class _PlayerScreenState extends State<PlayerScreen>
                     controls: (_) => const SizedBox.shrink(),
                   ),
           );
-    return Theme(
+    final pane = Theme(
       data: videoTheme,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
+      child: Builder(
+        builder: (context) {
           final routeAnimation = ModalRoute.of(context)?.animation;
           final settled = routeAnimation == null || routeAnimation.isCompleted;
           if (!settled && !_videoSurfaceMounted) {
             _watchRouteAnimation(routeAnimation);
           }
-          final ratio = MediaQuery.devicePixelRatioOf(context);
-          final pixels = Size(
-            (outputSize?.width ?? constraints.maxWidth) * ratio,
-            (outputSize?.height ?? constraints.maxHeight) * ratio,
-          );
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted && !_closed) {
-              _enhancement.setViewport(pixels, television: _television);
-            }
-          });
           return Stack(
             key: _videoPaneKey,
             fit: StackFit.expand,
@@ -2044,69 +2048,44 @@ class _PlayerScreenState extends State<PlayerScreen>
         },
       ),
     );
+    final ratio = MediaQuery.devicePixelRatioOf(context);
+    if (outputSize != null) {
+      // 手机折叠只改变可见区域：无需逐帧重建视频、控制栏和错误覆盖层。
+      _reportVideoViewport(outputSize * ratio);
+      return pane;
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _reportVideoViewport(constraints.biggest * ratio);
+        return pane;
+      },
+    );
   }
 
-  Widget _mobilePlaybackPanel({required double availableHeight}) {
-    final height = availableHeight * _mobilePanelHeightFraction;
-    final header = _mobilePanelHeader(_mobilePanelTheme.colorScheme);
-    return Theme(
-      data: _mobilePanelTheme,
-      child: TweenAnimationBuilder<double>(
-        tween: Tween<double>(
-          end: _mobilePanelCollapsed ? _mobilePanelHeaderHeight : height,
-        ),
-        duration: MediaQuery.disableAnimationsOf(context)
-            ? Duration.zero
-            : const Duration(milliseconds: 220),
-        curve: Curves.easeInOutCubic,
-        // 重内容只构建一次；动画中保持内部高度，复用独立绘制层。
-        child: RepaintBoundary(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: _mobileTab == 0
-                  ? _episodePanel(compact: true)
-                  : _mobileTab == 1
-                  ? _mobileSynopsis()
-                  : _mobileTab == 2
-                  ? _mobileRecommendations()
-                  : _mobileDownload(),
-            ),
-          ),
-        ),
-        builder: (context, visibleHeight, child) => ClipRect(
-          child: Align(
-            alignment: Alignment.topCenter,
-            heightFactor: visibleHeight / height,
-            child: SizedBox(
-              height: height,
-              child: Material(
-                key: const ValueKey('player-panel-background'),
-                color: Colors.black,
-                child: Column(
-                  children: [
-                    header,
-                    Expanded(
-                      child: Visibility(
-                        // 按实际动画位置隐藏，而不是点击即隐藏；快速反向
-                        // 或旋转打断时也不会残留一个过期的“动画中”状态。
-                        visible:
-                            !_mobilePanelCollapsed ||
-                            visibleHeight > _mobilePanelHeaderHeight + .01,
-                        maintainState: true,
-                        child: child!,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+  Widget _mobilePlaybackPanel({required double availableHeight}) => Theme(
+    data: _mobilePanelTheme,
+    child: PlayerPanelTransition(
+      collapsed: _mobilePanelCollapsed,
+      height: availableHeight * _mobilePanelHeightFraction,
+      headerHeight: _mobilePanelHeaderHeight,
+      header: _mobilePanelHeader(_mobilePanelTheme.colorScheme),
+      child: RepaintBoundary(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: _mobileTab == 0
+                ? _episodePanel(compact: true)
+                : _mobileTab == 1
+                ? _mobileSynopsis()
+                : _mobileTab == 2
+                ? _mobileRecommendations()
+                : _mobileDownload(),
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
 
   /// 面板头部：展开时是四个标签，收起时换成剧集进度与下载角标。
   /// 折叠开关常驻右侧，保证收起后仍有一触可达的恢复入口。
