@@ -40,6 +40,7 @@ import 'lan_controller.dart';
 import 'lan_screen.dart';
 import 'video_enhancement.dart';
 import 'video_output_size.dart';
+import 'stable_video_viewport.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({
@@ -119,6 +120,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _automaticFullscreenSuppressed = false;
   bool _panelOpen = false;
   bool _mobilePanelCollapsed = false;
+  static final _mobilePanelTheme = AppTheme.dark.copyWith(
+    scaffoldBackgroundColor: Colors.black,
+    colorScheme: AppTheme.dark.colorScheme.copyWith(surface: Colors.black),
+  );
 
   /// 收起态仍可见的头部高度，也是面板裁剪后保留的可见条高度。
   static const double _mobilePanelHeaderHeight = 48;
@@ -1734,7 +1739,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           skipTraversal: _television,
           child: Scaffold(
             resizeToAvoidBottomInset: false,
-            backgroundColor: fullscreen || pictureInPicture
+            backgroundColor: fullscreen || pictureInPicture || _mobile
                 ? Colors.black
                 : theme.scaffoldBackgroundColor,
             appBar: pictureInPicture || fullscreen || _mobile
@@ -1787,7 +1792,15 @@ class _PlayerScreenState extends State<PlayerScreen>
                         if (_mobile) {
                           return Column(
                             children: [
-                              Expanded(child: _videoPane(context)),
+                              Expanded(
+                                child: _videoPane(
+                                  context,
+                                  outputSize: Size(
+                                    constraints.maxWidth,
+                                    constraints.maxWidth / _aspectRatio,
+                                  ),
+                                ),
+                              ),
                               _mobilePlaybackPanel(
                                 availableHeight: constraints.maxHeight,
                               ),
@@ -1815,7 +1828,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Widget _videoPane(BuildContext context) {
+  Widget _videoPane(BuildContext context, {Size? outputSize}) {
     final videoTheme = _television
         ? televisionTheme(AppTheme.dark)
         : AppTheme.dark;
@@ -1892,6 +1905,23 @@ class _PlayerScreenState extends State<PlayerScreen>
           PlayerStatusMessage(message: _loading ? _loadingMessage : '正在缓冲'),
       ],
     );
+    // 固定媒体层的布局约束，并在 LayoutBuilder 外构建，动画帧只改变
+    // FittedBox 的合成变换；控制栏仍按实际可见区域布局，不随画面缩放。
+    final stableOutput = outputSize == null || widget.videoBuilder != null
+        ? null
+        : StableVideoViewport(
+            outputSize: outputSize,
+            child: _surfaceOutput
+                ? _videoSurfaceHost(
+                    ModalRoute.of(context)?.animation?.isCompleted ?? true,
+                  )
+                : Video(
+                    controller: _video!,
+                    fit: BoxFit.contain,
+                    wakelock: false,
+                    controls: (_) => const SizedBox.shrink(),
+                  ),
+          );
     return Theme(
       data: videoTheme,
       child: LayoutBuilder(
@@ -1903,8 +1933,8 @@ class _PlayerScreenState extends State<PlayerScreen>
           }
           final ratio = MediaQuery.devicePixelRatioOf(context);
           final pixels = Size(
-            constraints.maxWidth * ratio,
-            constraints.maxHeight * ratio,
+            (outputSize?.width ?? constraints.maxWidth) * ratio,
+            (outputSize?.height ?? constraints.maxHeight) * ratio,
           );
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted && !_closed) {
@@ -1917,7 +1947,11 @@ class _PlayerScreenState extends State<PlayerScreen>
             children: [
               if (widget.videoBuilder != null)
                 widget.videoBuilder!(layeredControls)
-              else if (_surfaceOutput) ...[
+              else if (stableOutput != null) ...[
+                const ColoredBox(color: Colors.black),
+                stableOutput,
+                layeredControls,
+              ] else if (_surfaceOutput) ...[
                 const ColoredBox(color: Colors.black),
                 _videoSurfaceHost(settled),
                 layeredControls,
@@ -2015,47 +2049,59 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Widget _mobilePlaybackPanel({required double availableHeight}) {
-    // 面板按可用高度的固定比例分配；收起时让出的高度全部回到视频区，
-    // 面板内部高度不变，只裁切可见区域：动画中网格不会被挤溢出，
-    // 收起后也保留选集滚动位置、当前标签和下载勾选状态。
     final height = availableHeight * _mobilePanelHeightFraction;
-    return ClipRect(
-      child: AnimatedAlign(
-        alignment: Alignment.topCenter,
-        heightFactor: _mobilePanelCollapsed
-            ? _mobilePanelHeaderHeight / height
-            : 1,
+    final header = _mobilePanelHeader(_mobilePanelTheme.colorScheme);
+    return Theme(
+      data: _mobilePanelTheme,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(
+          end: _mobilePanelCollapsed ? _mobilePanelHeaderHeight : height,
+        ),
         duration: MediaQuery.disableAnimationsOf(context)
             ? Duration.zero
             : const Duration(milliseconds: 220),
         curve: Curves.easeInOutCubic,
-        child: SizedBox(
-          height: height,
-          child: ColoredBox(
-            color: Theme.of(context).scaffoldBackgroundColor,
-            child: Column(
-              children: [
-                _mobilePanelHeader(Theme.of(context).colorScheme),
-                Expanded(
-                  child: Visibility(
-                    visible: !_mobilePanelCollapsed,
-                    maintainState: true,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: _mobileTab == 0
-                            ? _episodePanel(compact: true)
-                            : _mobileTab == 1
-                            ? _mobileSynopsis()
-                            : _mobileTab == 2
-                            ? _mobileRecommendations()
-                            : _mobileDownload(),
+        // 重内容只构建一次；动画中保持内部高度，复用独立绘制层。
+        child: RepaintBoundary(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: _mobileTab == 0
+                  ? _episodePanel(compact: true)
+                  : _mobileTab == 1
+                  ? _mobileSynopsis()
+                  : _mobileTab == 2
+                  ? _mobileRecommendations()
+                  : _mobileDownload(),
+            ),
+          ),
+        ),
+        builder: (context, visibleHeight, child) => ClipRect(
+          child: Align(
+            alignment: Alignment.topCenter,
+            heightFactor: visibleHeight / height,
+            child: SizedBox(
+              height: height,
+              child: Material(
+                key: const ValueKey('player-panel-background'),
+                color: Colors.black,
+                child: Column(
+                  children: [
+                    header,
+                    Expanded(
+                      child: Visibility(
+                        // 按实际动画位置隐藏，而不是点击即隐藏；快速反向
+                        // 或旋转打断时也不会残留一个过期的“动画中”状态。
+                        visible: !_mobilePanelCollapsed ||
+                            visibleHeight > _mobilePanelHeaderHeight + .01,
+                        maintainState: true,
+                        child: child!,
                       ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
@@ -2215,7 +2261,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   Widget _mobileTabButton(int value, String label) {
     final selected = _mobileTab == value;
-    final colors = Theme.of(context).colorScheme;
+    final colors = _mobilePanelTheme.colorScheme;
     return Expanded(
       child: InkWell(
         onTap: () {
@@ -2247,7 +2293,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Widget _mobileRecommendations() {
-    final colors = Theme.of(context).colorScheme;
+    final colors = _mobilePanelTheme.colorScheme;
     if (_recommendations.isEmpty) {
       return Center(
         child: Padding(
@@ -2511,7 +2557,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   Widget _mobileSynopsis() {
     final drama = widget.detail.drama;
-    final colors = Theme.of(context).colorScheme;
+    final colors = _mobilePanelTheme.colorScheme;
     final meta = [
       SourceSite.byId(drama.source).name,
       if (drama.episodes > 0) '共 ${drama.episodes} 集',
@@ -2540,7 +2586,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   children: [
                     Text(
                       drama.title,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      style: _mobilePanelTheme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -2632,8 +2678,8 @@ class _PlayerScreenState extends State<PlayerScreen>
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         decoration: BoxDecoration(
           color: state == null
-              ? Theme.of(context).colorScheme.surfaceContainerHighest
-              : Theme.of(context).colorScheme.secondaryContainer,
+              ? _mobilePanelTheme.colorScheme.surfaceContainerHighest
+              : _mobilePanelTheme.colorScheme.secondaryContainer,
           borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
@@ -2656,7 +2702,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Widget _mobileDownload() {
-    final colors = Theme.of(context).colorScheme;
+    final colors = _mobilePanelTheme.colorScheme;
     if (!widget.repository.supportsDownloads || !widget.store.canDownload) {
       return ColoredBox(
         color: colors.surface,
@@ -2676,7 +2722,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Widget _episodePanel({bool compact = false}) => ColoredBox(
-    color: Theme.of(context).colorScheme.surface,
+    color: compact ? Colors.black : Theme.of(context).colorScheme.surface,
     child: PlayerEpisodeGrid(
       episodes: widget.detail.episodes,
       currentIndex: _index,

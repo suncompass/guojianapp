@@ -313,10 +313,18 @@ void main() {
             player,
             size: const Size(390, 844),
             padding: const FakeViewPadding(top: 32, bottom: 24),
+            theme: ThemeData.light(),
           );
           final surface = find.byKey(const ValueKey('player-gesture-surface'));
           final episode = find.byKey(const ValueKey('play-episode-2'));
           final toggle = find.byKey(const ValueKey('player-panel-toggle'));
+          final background = find.byKey(
+            const ValueKey('player-panel-background'),
+          );
+          expect(tester.widget<Material>(background).color, Colors.black);
+          final panelTheme = Theme.of(tester.element(episode));
+          expect(panelTheme.brightness, Brightness.dark);
+          expect(panelTheme.colorScheme.surface, Colors.black);
           final expandedRect = tester.getRect(surface);
           final surfaceElement = tester.element(surface);
           final episodeElement = tester.element(episode);
@@ -329,6 +337,7 @@ void main() {
           await tester.tap(toggle);
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 110));
+          expect(episode, findsOneWidget, reason: '收起过程中内容不能提前消失');
           expect(tester.takeException(), isNull);
           await tester.pump(const Duration(milliseconds: 220));
           final collapsedRect = tester.getRect(surface);
@@ -337,6 +346,7 @@ void main() {
           expect(collapsedRect.bottom, closeTo(844 - 24 - 48, .01));
           expect(tester.getRect(toggle).bottom, lessThanOrEqualTo(844 - 24));
           expect(find.text('第 1 集 · 共 2 集'), findsOneWidget);
+          expect(tester.widget<Material>(background).color, Colors.black);
           expect(find.text('展开'), findsOneWidget);
           expect(find.text('简介'), findsNothing);
           expect(episode, findsNothing);
@@ -366,6 +376,37 @@ void main() {
       },
     );
   }
+
+  testWidgets('panel animation can reverse before collapse completes', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      final repository = RouteRepository();
+      final player = ScriptedPlayer();
+      await mount(tester, repository, player, size: const Size(390, 844));
+      final toggle = find.byKey(const ValueKey('player-panel-toggle'));
+      final episode = find.byKey(const ValueKey('play-episode-2'));
+      final element = tester.element(episode);
+      await tester.tap(toggle);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(tester.element(episode), same(element));
+      await tester.tap(toggle);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+      expect(tester.element(episode), same(element));
+      expect(find.text('收起'), findsOneWidget);
+      await tester.tap(toggle);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+      expect(episode, findsNothing);
+      expect(find.text('展开'), findsOneWidget);
+      await unmount(tester, player);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
 
   testWidgets('collapsing preserves the selected tab and paused playback', (
     tester,
