@@ -27,7 +27,12 @@ class PlayerViewportLayout extends StatelessWidget {
     // 不在动画帧里构建视频或选集列表，只重新分配可见区域。
     child: IgnorePointer(
       ignoring: fullscreen,
-      child: ExcludeFocus(excluding: fullscreen, child: panel),
+      child: ExcludeFocus(
+        excluding: fullscreen,
+        // 全屏请求生效的第一帧就停止绘制面板；尺寸仍由外层动画收起，
+        // 避免旋转时闪出选集，同时不拆卸视频或丢失面板滚动状态。
+        child: Opacity(opacity: fullscreen ? 0 : 1, child: panel),
+      ),
     ),
     builder: (context, fraction, child) => Flex(
       direction: axis,

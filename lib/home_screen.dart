@@ -52,6 +52,8 @@ class _HomeScreenState extends State<HomeScreen> {
   late SourceSite _source;
   bool _allSources = false;
   List<Drama> _items = [];
+  Object? _visibleKey;
+  List<Drama> _visibleItems = [];
   bool _loading = true;
   bool _loadingMore = false;
   bool _hasMore = true;
@@ -445,7 +447,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onCatalogScroll() {
-    if (mounted && _scroll.hasClients) {
+    // 首页保活后，隐藏列表仍可能收到布局/滚动通知，不能借此启动后台续页。
+    if (!mounted || _tab != _tabDiscover || _showRecommendations) return;
+    if (_scroll.hasClients) {
       _prefetch.scrolled(
         extentAfter: _scroll.position.extentAfter,
         viewport: _scroll.position.viewportDimension,
@@ -466,6 +470,7 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _catalogLoadScheduled = false;
       if (!mounted ||
+          _tab != _tabDiscover ||
           _showRecommendations ||
           !_hasMore ||
           _loading ||
@@ -626,6 +631,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
     }
+    CatalogPage? restored;
     try {
       final result = await _browser.load(
         group,
@@ -636,9 +642,14 @@ class _HomeScreenState extends State<HomeScreen> {
         force: force,
         cacheOnly: cacheOnly,
         onCached: (result) => accept(result, cached: true),
+        onRestored: (result) {
+          restored = result;
+          accept(result, cached: true, updateLibrary: false);
+        },
         onPartial: (result) => accept(result, partial: true),
       );
-      accept(result);
+      // 已同步显示的内存快照不要再接收一次，更不能在切换帧重复同步整库。
+      if (!identical(result, restored)) accept(result);
     } catch (error) {
       if (!mounted || generation != _generation) return;
       setState(() {
@@ -791,6 +802,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _changeTab(int tab) {
+    if (tab == _tab) return;
     if (tab == _tabDiscover) {
       _prefetch.resume();
       _schedulePrefetch();
@@ -899,18 +911,33 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<Drama> get _visible {
     final query = _search.text.trim().toLowerCase();
-    return sortCatalog(
+    final category = _category;
+    final onlineSearch = _onlineSearch;
+    final sources = widget.store.sources.map((source) => source.id).toSet();
+    final view = widget.store.catalogView;
+    // _items 更新时始终替换列表；导航、进度与收藏通知不应重新筛选/排序。
+    // 权限与筛选值也纳入键，避免保活后显示已撤销站源或过期筛选结果。
+    final key = (
+      _items,
+      category,
+      query,
+      onlineSearch,
+      sources.join(','),
+      view.sort,
+      view.release,
+    );
+    if (_visibleKey == key) return _visibleItems;
+    _visibleKey = key;
+    return _visibleItems = sortCatalog(
       _items.where((drama) {
-        if (!widget.store.allowsSource(drama.source)) return false;
-        if (_category.startsWith('local:') &&
-            categoryName(drama.category) != _category.substring(6)) {
+        if (!sources.contains(drama.source)) return false;
+        if (category.startsWith('local:') &&
+            categoryName(drama.category) != category.substring(6)) {
           return false;
         }
-        return _onlineSearch ||
-            query.isEmpty ||
-            matchesDramaQuery(drama, query);
+        return onlineSearch || query.isEmpty || matchesDramaQuery(drama, query);
       }),
-      widget.store.catalogView,
+      view,
     );
   }
 
@@ -1213,20 +1240,36 @@ class _HomeScreenState extends State<HomeScreen> {
                   const VerticalDivider(width: 1, thickness: 1),
                 ],
                 Expanded(
-                  child: _tab == _tabDiscover
-                      ? widget.store.sources.isEmpty
-                            ? const StatusPanel(
-                                title: '暂无可用站源',
-                                message: '请联系管理员为当前用户开放站源。',
-                              )
-                            : _catalog(selectionInBody: desktop || television)
-                      : _tab == _tabDownloads
-                      ? DownloadsScreen(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // 保留首页滚动树和封面状态，切回时不再销毁后重新挂载。
+                      // 隐藏期间关闭 ticker 与焦点，其他页仍按需创建。
+                      Offstage(
+                        offstage: _tab != _tabDiscover,
+                        child: TickerMode(
+                          enabled: _tab == _tabDiscover,
+                          child: ExcludeFocus(
+                            excluding: _tab != _tabDiscover,
+                            child: widget.store.sources.isEmpty
+                                ? const StatusPanel(
+                                    title: '暂无可用站源',
+                                    message: '请联系管理员为当前用户开放站源。',
+                                  )
+                                : _catalog(
+                                    selectionInBody: desktop || television,
+                                  ),
+                          ),
+                        ),
+                      ),
+                      if (_tab == _tabDownloads)
+                        DownloadsScreen(
                           repository: widget.repository,
                           store: widget.store,
                           embedded: true,
                         )
-                      : SavedLibrary(
+                      else if (_tab != _tabDiscover)
+                        SavedLibrary(
                           key: ValueKey('saved-tab-$_tab'),
                           repository: widget.repository,
                           store: widget.store,
@@ -1244,6 +1287,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               ? (drama) => _openDrama(drama, download: true)
                               : null,
                         ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -1302,7 +1347,7 @@ class _HomeScreenState extends State<HomeScreen> {
   );
 
   Widget _catalog({required bool selectionInBody}) {
-    final items = _visible;
+    final items = _showRecommendations ? const <Drama>[] : _visible;
     final television = AppLayout.isTelevision(context);
     return Column(
       children: [

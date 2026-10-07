@@ -41,6 +41,7 @@ class CatalogBrowser {
   final _menus = <String, List<CatalogCategory>>{};
   final _library = <String, Map<String, Drama>>{};
   final _sessions = <String, _CatalogSession>{};
+  final _choicesCache = <String, List<_CatalogChoice>>{};
   int _generation = 0;
 
   Future<void> cancel() {
@@ -52,6 +53,7 @@ class CatalogBrowser {
   }
 
   void _remember(String source, Iterable<Drama> items) {
+    _choicesCache.clear();
     final library = _library.putIfAbsent(source, () => {});
     for (final drama in items) {
       if (drama.source == source) {
@@ -65,6 +67,7 @@ class CatalogBrowser {
   }
 
   void updateDramas(Iterable<Drama> dramas) {
+    _choicesCache.clear();
     final updates = {for (final drama in dramas) drama.id: drama};
     for (final drama in updates.values) {
       final library = _library[drama.source];
@@ -111,6 +114,7 @@ class CatalogBrowser {
           source.id,
           force: force,
         );
+        _choicesCache.clear();
       } catch (_) {
         failures.add(source.groupName);
       }
@@ -119,6 +123,11 @@ class CatalogBrowser {
   }
 
   List<_CatalogChoice> _choices(SourceGroup group) {
+    // 分类只随剧库或远端菜单变化，不在每次首页重建时遍历整库并排序。
+    // 使用实际站源集合，避免权限变更后复用同名分组的旧分类。
+    final key = group.sources.map((source) => source.id).join(',');
+    final cached = _choicesCache[key];
+    if (cached != null) return cached;
     final choices = <String, _CatalogChoice>{};
     for (final source in group.sources) {
       for (final category in _menus[source.id] ?? const <CatalogCategory>[]) {
@@ -142,7 +151,7 @@ class CatalogBrowser {
         () => _CatalogChoice(CatalogCategory('local:$name', name, local: true)),
       );
     }
-    return choices.values.toList();
+    return _choicesCache[key] = choices.values.toList();
   }
 
   List<CatalogCategory> categories(SourceGroup group) => [
@@ -163,6 +172,8 @@ class CatalogBrowser {
     bool useCache = false,
     bool cacheOnly = false,
     void Function(CatalogPage)? onCached,
+    // 内存会话已处理过剧库同步，恢复时只需更新视图，不重复序列化保存。
+    void Function(CatalogPage)? onRestored,
     void Function(CatalogPage)? onPartial,
   }) async {
     if (cacheOnly && (more || force || query.trim().isNotEmpty)) {
@@ -172,7 +183,9 @@ class CatalogBrowser {
     for (final session in _sessions.values) {
       session.generation++;
     }
-    final choice = query.isEmpty ? _choice(group, category) : null;
+    final choice = query.isEmpty && category.isNotEmpty
+        ? _choice(group, category)
+        : null;
     final requests = choice != null && !choice.category.local
         ? choice.requests
         : {for (final source in group.sources) source.id: ''};
@@ -234,10 +247,11 @@ class CatalogBrowser {
           final entry = session.entries[source]!;
           return entry.page > 0 && entry.fresh;
         });
-    if (reuseSession) onCached?.call(snapshot());
+    final restored = reuseSession ? snapshot() : null;
+    if (restored != null) (onRestored ?? onCached)?.call(restored);
     await repository.cancelCatalog();
     if (request != _generation) throw AppFailure('已取消加载');
-    if (reuseSession) return snapshot();
+    if (restored != null) return restored;
 
     var emitted = 0;
     var lastEmit = DateTime.fromMillisecondsSinceEpoch(0);

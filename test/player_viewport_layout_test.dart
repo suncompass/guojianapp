@@ -3,6 +3,20 @@ import 'package:duanju_app/stable_video_viewport.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+class _PanelPainter extends CustomPainter {
+  _PanelPainter(this.onPaint);
+  final VoidCallback onPaint;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    onPaint();
+    canvas.drawRect(Offset.zero & size, Paint()..color = Colors.red);
+  }
+
+  @override
+  bool shouldRepaint(covariant _PanelPainter oldDelegate) => false;
+}
+
 void main() {
   for (final axis in Axis.values) {
     testWidgets('fullscreen keeps $axis media mounted through transitions', (
@@ -24,11 +38,15 @@ void main() {
           },
         ),
       );
+      var panelPaints = 0;
       final panel = SizedBox(
         key: panelKey,
         width: axis == Axis.horizontal ? 160 : null,
         height: axis == Axis.vertical ? 200 : null,
-        child: const ColoredBox(color: Colors.black),
+        child: CustomPaint(
+          painter: _PanelPainter(() => panelPaints++),
+          child: const SizedBox.expand(),
+        ),
       );
       Future<void> render(bool fullscreen, {bool disableAnimations = false}) {
         return tester.pumpWidget(
@@ -55,14 +73,24 @@ void main() {
       final surfaceElement = tester.element(find.byKey(surfaceKey));
       final panelElement = tester.element(find.byKey(panelKey));
       final initialExtent = extent();
+      final paintsBeforeFullscreen = panelPaints;
+      expect(paintsBeforeFullscreen, greaterThan(0));
       await render(true);
       expect(extent(), initialExtent, reason: '切换请求不能让布局瞬间跳到终点');
+      expect(panelPaints, paintsBeforeFullscreen, reason: '全屏首帧不能绘制选集');
       await tester.pump(const Duration(milliseconds: 100));
       expect(extent(), greaterThan(initialExtent));
+      expect(panelPaints, paintsBeforeFullscreen, reason: '动画中间帧不能漏出选集');
+      tester.view.physicalSize = const Size(844, 390);
+      await tester.pump();
+      expect(panelPaints, paintsBeforeFullscreen, reason: '旋转重布局也不能绘制选集');
+      expect(tester.element(find.byKey(surfaceKey)), same(surfaceElement));
+      tester.view.physicalSize = const Size(390, 844);
       // 收起尚未完成就反向展开，继续沿用原视频与面板状态。
       await render(false);
       await tester.pump(const Duration(milliseconds: 240));
       expect(extent(), initialExtent);
+      expect(panelPaints, greaterThan(paintsBeforeFullscreen));
       expect(tester.element(find.byKey(panelKey)), same(panelElement));
       await render(true);
       await tester.pump(const Duration(milliseconds: 240));
