@@ -20,6 +20,7 @@ import 'catalog_updates.dart';
 import 'download_collections.dart';
 import 'resource_settings.dart';
 import 'library_transfer.dart';
+import 'network_exit.dart';
 
 typedef _NativeRequest = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef _DartRequest = Pointer<Utf8> Function(Pointer<Utf8>);
@@ -123,6 +124,34 @@ int _nativeTimeoutSeconds(String action) => action == 'moveDownloads'
     : action == 'libraryImport'
     ? 180
     : 70;
+
+/// 换出口重试只针对只读动作：写入类动作重复提交会产生副作用。
+const _exitRetryActions = {
+  'catalog',
+  'cached',
+  'categories',
+  'detail',
+  'metadata',
+  'cover',
+  'prepareCover',
+  'resolve',
+  'preload',
+  'prepareHandoff',
+  'suggestions',
+  'rankings',
+  'danmaku',
+  'sourceStatus',
+};
+
+/// 在工作 isolate 里完成编码、原生调用与解码，并按动作给出超时上限。
+Future<Map<String, dynamic>> _invokeNative(
+  Map<String, dynamic> input,
+  String action, {
+  Uint8List? upload,
+  String uploadKey = 'payload',
+}) => Isolate.run(
+  () => _invoke(input, upload: upload, uploadKey: uploadKey),
+).timeout(Duration(seconds: _nativeTimeoutSeconds(action)));
 
 class AppFailure implements Exception {
   AppFailure(this.message, {this.code = ''});
@@ -697,12 +726,39 @@ class NativeRepository extends AppRepository {
       if (action == 'resolve' && access != null && !access!.canDownload) {
         input['force'] = true;
       }
-      final response = await Isolate.run(
-        () => _invoke(input, upload: upload, uploadKey: uploadKey),
-      ).timeout(Duration(seconds: _nativeTimeoutSeconds(action)));
+      final response = await _invokeNative(
+        input,
+        action,
+        upload: upload,
+        uploadKey: uploadKey,
+      );
+      if (response['ok'] != true) {
+        final message = response['error'] as String? ?? '读取失败，请重试';
+        // 站源侧的错误是以信封返回的，不是异常；需要在换出口后再试一次。
+        // 只对只读动作重试，写入类动作重复提交会造成副作用。
+        if (_exitRetryActions.contains(action) &&
+            NetworkExit.worthBypassing(AppFailure(message)) &&
+            await NetworkExit.borrow()) {
+          try {
+            final retried = await _invokeNative(
+              input,
+              action,
+              upload: upload,
+              uploadKey: uploadKey,
+            );
+            if (retried['ok'] == true) return retried['data'] is Map
+                ? Map<String, dynamic>.from(retried['data'] as Map)
+                : <String, dynamic>{};
+            response['error'] = retried['error'] ?? response['error'];
+            response['code'] = retried['code'] ?? response['code'];
+          } finally {
+            await NetworkExit.release();
+          }
+        }
+      }
       if (response['ok'] != true) {
         throw AppFailure(
-          response['error'] as String? ?? '读取失败，请重试',
+          NetworkExit.describe(response['error'] as String? ?? '读取失败，请重试'),
           code: response['code'] as String? ?? '',
         );
       }

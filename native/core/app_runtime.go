@@ -583,16 +583,16 @@ func (engine *nativeEngine) nativeCatalog(ctx context.Context, input nativeInput
 	d := engine.downloader
 	result := nativeCatalogResult{Items: []nativeDrama{}, Page: page}
 	if query != "" && source == sourceHongguo {
-		entry, err := d.searchHongguoDramas(ctx, query)
+		entry, hasMore, err := d.searchHongguoDramasPaged(ctx, query, page)
 		if err != nil {
 			return result, err
 		}
 		for _, drama := range entry.Dramas {
 			result.Items = append(result.Items, nativeNormalize(drama))
 		}
-		result.Warning, result.Page = entry.Warning, 1
+		result.Warning, result.Page, result.HasMore = entry.Warning, page, hasMore
 		if entry.Limited && result.Warning == "" {
-			result.Warning = "已显示当前可获取的匹配结果，使用更完整的剧名可继续查找"
+			result.Warning = "已显示当前可获取的匹配结果，可点「加载更多」继续补齐季数"
 		}
 		return result, nil
 	}

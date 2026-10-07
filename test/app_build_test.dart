@@ -19,12 +19,22 @@ void main() {
     SharedPreferences.setMockInitialValues({'source': 'huangdou'});
     final store = LocalStore(await SharedPreferences.getInstance());
     expect(appSlug, 'hongguojian');
-    expect(store.sources.map((source) => source.id), ['hongguo']);
-    expect(SourceSite.values.map((source) => source.id), ['hongguo']);
+    expect(
+      store.sources.map((source) => source.id),
+      SourceSite.values.map((source) => source.id),
+    );
+    expect(SourceSite.values.map((source) => source.id), contains('hongguo'));
+    // 单版本只装绿色站源：红果 + 11 个绿色短剧站源。
+    expect(SourceSite.values.length, 12);
+    expect(SourceSite.isAvailable('miguo'), isTrue);
+    expect(SourceSite.isAvailable('shuangguo'), isTrue);
     expect(SourceSite.isAvailable('huangdou'), isFalse);
+    // 成人站源既不注册也不可用，但标识必须仍然认得。
+    expect(SourceSite.isAvailable('yanguo'), isFalse);
     // 旧数据里出现过的站源必须仍然认得，否则升级后原有用户的站源权限会被判成无效。
     expect(SourceSite.isKnown('huangdou'), isTrue);
     expect(SourceSite.isKnown('chaoguo'), isTrue);
+    expect(SourceSite.isKnown('yanguo'), isTrue);
     expect(SourceSite.isKnown('unknown'), isFalse);
     expect(SourceSite.byId('huangdou').id, 'hongguo');
     expect(store.allowsSource('huangdou'), isFalse);
@@ -143,12 +153,7 @@ void main() {
     'background requests reject unavailable sources before native I/O',
     () async {
       final repository = NativeRepository(background: true);
-      final denied = [
-        ...SourceSite.allValues
-            .where((source) => !SourceSite.isAvailable(source.id))
-            .map((source) => source.id),
-        'unknown',
-      ];
+      final denied = [...SourceSite.retiredIds, 'unknown'];
       for (final source in denied) {
         final drama = Drama(id: '$source:123', source: source, title: '合成数据');
         final episode = Episode({'id': '1'}, 1);

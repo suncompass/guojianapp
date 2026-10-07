@@ -7,38 +7,55 @@ import (
 )
 
 const (
-	sourceYaguo   = "yaguo"
-	sourceMaoguo  = "maoguo"
-	sourceFanguo  = "fanguo"
-	sourceGuanguo = "guanguo"
-	sourceHeguo   = "heguo"
-	sourceXingguo = "xingguo"
-	sourceHuaguo  = "huaguo"
-	sourceNiuguo  = "niuguo"
-	sourcePiguo   = "piguo"
-	sourceWuguo   = "wuguo"
-	sourceChaoguo = "chaoguo"
+	sourceYaguo     = "yaguo"
+	sourceMaoguo    = "maoguo"
+	sourceFanguo    = "fanguo"
+	sourceGuanguo   = "guanguo"
+	sourceHeguo     = "heguo"
+	sourceXingguo   = "xingguo"
+	sourceHuaguo    = "huaguo"
+	sourceNiuguo    = "niuguo"
+	sourceWuguo     = "wuguo"
+	sourceChaoguo   = "chaoguo"
+	sourceMiguo     = "miguo"
+	sourceShuangguo = "shuangguo"
+	// 以下为成人站源标识，仅保留供解析层引用；能否在应用内出现由 nativeGreenSources 白名单决定。
+	sourceYanguo   = "yanguo"
+	sourceTaoguo   = "taoguo"
+	sourceYouguo   = "youguo"
+	sourceLiuguo   = "liuguo"
+	sourceMeiguo   = "meiguo"
+	sourceChengguo = "chengguo"
+	sourceXiaoguo  = "xiaoguo"
+	sourceYingguo  = "yingguo"
+	sourceLuguo    = "luguo"
+	sourceLiguo    = "liguo"
+	sourceJuguo    = "juguo"
+	sourceZaoguo   = "zaoguo"
+	sourceNingguo  = "ningguo"
+	sourceMangguo  = "mangguo"
 
 	duanjuMaxBodyBytes = 8 * 1024 * 1024
 	duanjuUserAgent    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
 
 var (
-	yaguoBaseURL    = "https://app.whjzjx.cn"
-	yaguoLoginURL   = "https://u.shytkjgs.com/user/v1/account/login"
-	maoguoBaseURL   = "https://api-store.qmplaylet.com"
-	maoguoReadURL   = "https://api-read.qmplaylet.com"
-	fanguoBaseURL   = "https://xifan-api-cn.youlishipin.com"
-	guanguoBaseURL  = "https://api.drama.9ddm.com"
-	heguoBaseURL    = "https://www.kuaikaw.cn"
-	xingguoBaseURL  = "http://read.api.duodutek.com"
-	huaguoBaseURL   = "https://www.zywest263.com"
-	niuguoBaseURL   = "https://ccc.chaojichaojichanga.com:35620"
-	niuguoParseURL  = "http://ccs.jshh.gzbaoxian.com"
-	niuguoParseURL2 = "http://101.42.92.211:5560"
-	piguoBaseURL    = "https://ptt.red"
-	wuguoBaseURL    = "https://www.duanju55.com"
-	chaoguoBaseURL  = "https://www.shanekids.com"
+	yaguoBaseURL     = "https://app.whjzjx.cn"
+	yaguoLoginURL    = "https://u.shytkjgs.com/user/v1/account/login"
+	maoguoBaseURL    = "https://api-store.qmplaylet.com"
+	maoguoReadURL    = "https://api-read.qmplaylet.com"
+	fanguoBaseURL    = "https://xifan-api-cn.youlishipin.com"
+	guanguoBaseURL   = "https://api.drama.9ddm.com"
+	heguoBaseURL     = "https://www.kuaikaw.cn"
+	xingguoBaseURL   = "http://read.api.duodutek.com"
+	huaguoBaseURL    = "https://www.zywest263.com"
+	niuguoBaseURL    = "https://ccc.chaojichaojichanga.com:35620"
+	niuguoParseURL   = "http://ccs.jshh.gzbaoxian.com"
+	niuguoParseURL2  = "http://101.42.92.211:5560"
+	wuguoBaseURL     = "https://www.duanju55.com"
+	chaoguoBaseURL   = "https://www.shanekids.com"
+	miguoBaseURL     = "https://dmxq40.com"
+	shuangguoBaseURL = "https://www.duanju2.com"
 )
 
 type duanjuSourceSpec struct {
@@ -52,6 +69,10 @@ type duanjuSourceSpec struct {
 	Paged     bool
 	Browser   bool
 	BrowseAll bool
+	// Single 表示详情与播放同页，页面里的播放链接是相关推荐而不是分集。
+	Single bool
+	// Suggest 表示 HTML 搜索页不可用，改走框架自带的 suggest JSON 接口。
+	Suggest bool
 }
 
 var duanjuProviderCatalog = []duanjuSourceSpec{
@@ -63,9 +84,11 @@ var duanjuProviderCatalog = []duanjuSourceSpec{
 	{ID: sourceXingguo, Name: "星果", Base: xingguoBaseURL, Kind: "api", Searcher: true, Paged: true},
 	{ID: sourceHuaguo, Name: "花果", Base: huaguoBaseURL, Kind: "maccms", Searcher: true, Paged: true},
 	{ID: sourceNiuguo, Name: "牛果", Base: niuguoBaseURL, Kind: "api", Searcher: true, Paged: true},
-	{ID: sourcePiguo, Name: "皮果", Base: piguoBaseURL, Kind: "maccms", Searcher: true, Paged: true, Browser: true},
 	{ID: sourceWuguo, Name: "伍果", Base: wuguoBaseURL, Kind: "maccms", Searcher: true, Paged: true},
 	{ID: sourceChaoguo, Name: "超果", Base: chaoguoBaseURL, Kind: "web", Searcher: true, Paged: true},
+	{ID: sourceMiguo, Name: "米果", Base: miguoBaseURL, Kind: "maccms", Searcher: true},
+	// 爽果分类页把末尾的 ---.html 换成 {页码}---.html，站点自带翻页。
+	{ID: sourceShuangguo, Name: "爽果", Base: shuangguoBaseURL, Kind: "maccms", Searcher: true, Paged: true},
 }
 
 var duanjuMarkupPattern = regexp.MustCompile(`<[^>]{1,80}>`)
@@ -95,10 +118,13 @@ var duanjuSourceAliases = map[string]string{
 	"xingguo": "xingguo", "xingxing": sourceXingguo, "星星": sourceXingguo, "read.api.duodutek.com": sourceXingguo,
 	"huaguo": "huaguo", "huasheng": sourceHuaguo, "花生": sourceHuaguo, "www.zywest263.com": sourceHuaguo,
 	"niuguo": "niuguo", "niuniu": sourceNiuguo, "牛牛": sourceNiuguo,
-	"piguo": "piguo", "ptt": sourcePiguo, "ptt.red": sourcePiguo,
 	"wuguo": "wuguo", "wuwu": sourceWuguo, "五五": sourceWuguo, "www.duanju55.com": sourceWuguo,
 	"chaoguo": "chaoguo", "chaoduanju": sourceChaoguo, "超短剧": sourceChaoguo, "超果": sourceChaoguo,
 	"shanekids": sourceChaoguo, "www.shanekids.com": sourceChaoguo, "shanekids.com": sourceChaoguo,
+	"miguo": "miguo", "dami": sourceMiguo, "大米": sourceMiguo, "大米星球": sourceMiguo,
+	"dmxq40.com": sourceMiguo, "www.dmxq40.com": sourceMiguo,
+	"shuangguo": "shuangguo", "duanju2": sourceShuangguo, "短剧网": sourceShuangguo,
+	"短剧网站小生": sourceShuangguo, "duanju2.com": sourceShuangguo, "www.duanju2.com": sourceShuangguo,
 }
 
 var duanjuSourcesByName = func() map[string]duanjuSourceSpec {
@@ -131,10 +157,21 @@ func (d *Downloader) duanjuBaseURL(source string) string {
 	if !found {
 		return ""
 	}
-	if configured := d.providerHosts[canonicalProviderSource(source)]; configured != "" {
-		return strings.TrimRight(configured, "/")
+	base := strings.TrimRight(spec.Base, "/")
+	if configured := strings.TrimRight(d.providerHosts[canonicalProviderSource(source)], "/"); configured != "" {
+		// 站点重定向只更换域名，注册的路径前缀依然有效。直接采用学习到的
+		// 主机名会把带目录前缀的站源地址打散（子路径被丢掉后落到站点的
+		// 默认首页），所以同源时只替换主机部分。
+		specURL, specErr := url.Parse(base)
+		learnedURL, learnedErr := url.Parse(configured)
+		if specErr == nil && learnedErr == nil && learnedURL.Host != "" && specURL.Path != "" {
+			specURL.Scheme = learnedURL.Scheme
+			specURL.Host = learnedURL.Host
+			return strings.TrimRight(specURL.String(), "/")
+		}
+		return configured
 	}
-	return strings.TrimRight(spec.Base, "/")
+	return base
 }
 
 func duanjuSourceForHost(host string) string {
@@ -156,12 +193,14 @@ func duanjuSourceForHost(host string) string {
 		return sourceHuaguo
 	case host == "ccc.chaojichaojichanga.com":
 		return sourceNiuguo
-	case host == "ptt.red" || host == "www.ptt.red":
-		return sourcePiguo
 	case host == "www.duanju55.com" || host == "duanju55.com":
 		return sourceWuguo
 	case host == "www.shanekids.com" || host == "shanekids.com":
 		return sourceChaoguo
+	case host == "dmxq40.com" || host == "www.dmxq40.com":
+		return sourceMiguo
+	case host == "www.duanju2.com" || host == "duanju2.com":
+		return sourceShuangguo
 	default:
 		return ""
 	}
@@ -283,17 +322,6 @@ var duanjuStaticCategories = map[string][]duanjuCategory{
 		{ID: "1147", Name: "总裁"},
 		{ID: "943", Name: "职场商战"},
 	},
-	sourcePiguo: {
-		{ID: "67", Name: "爽剧"},
-		{ID: "68", Name: "言情"},
-		{ID: "70", Name: "穿越"},
-		{ID: "71", Name: "悬疑"},
-		{ID: "73", Name: "古装"},
-		{ID: "80", Name: "都市"},
-		{ID: "84", Name: "甜宠"},
-		{ID: "85", Name: "恋爱"},
-		{ID: "74", Name: "其他"},
-	},
 	sourceHuaguo: {
 		{ID: "27", Name: "短剧"},
 	},
@@ -324,6 +352,25 @@ var duanjuStaticCategories = map[string][]duanjuCategory{
 		{ID: "tag:穿越", Name: "穿越"},
 		{ID: "tag:玄幻", Name: "玄幻"},
 		{ID: "tag:重生", Name: "重生"},
+	},
+	// 米果的分类页不分页（第 2、3 页与第 1 页返回同一批条目），因此只声明分类。
+	sourceMiguo: {
+		{ID: "36", Name: "短剧"},
+		{ID: "netflix", Name: "Netflix"},
+		{ID: "21", Name: "电视剧"},
+		{ID: "20", Name: "电影"},
+		{ID: "22", Name: "动漫"},
+		{ID: "23", Name: "综艺"},
+	},
+	sourceShuangguo: {
+		{ID: "all", Name: "全部"},
+		{ID: "反转爽文", Name: "反转爽文"},
+		{ID: "古装仙侠", Name: "古装仙侠"},
+		{ID: "女频恋爱", Name: "女频恋爱"},
+		{ID: "年代穿越", Name: "年代穿越"},
+		{ID: "现代言情", Name: "现代言情"},
+		{ID: "现代都市", Name: "现代都市"},
+		{ID: "短剧", Name: "短剧"},
 	},
 }
 

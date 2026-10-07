@@ -68,6 +68,10 @@ func (d *Downloader) providerCatalogCategories(ctx context.Context, source strin
 
 func (d *Downloader) fetchDuanjuCatalogPage(ctx context.Context, source string, page int, category string) ([]Drama, bool, error) {
 	source = canonicalProviderSource(source)
+	// 按站源声明的类型分发，避免新增站源时漏登记分支。
+	if spec, found := duanjuSourceSpecFor(source); found && spec.Kind == "maccms" {
+		return d.fetchMaccmsCatalogPage(ctx, source, page, category)
+	}
 	switch source {
 	case sourceYaguo:
 		return d.fetchYaguoCatalogPage(ctx, page, category)
@@ -83,7 +87,7 @@ func (d *Downloader) fetchDuanjuCatalogPage(ctx context.Context, source string, 
 		return d.fetchXingguoCatalogPage(ctx, page, category)
 	case sourceNiuguo:
 		return d.fetchNiuguoCatalogPage(ctx, page, category)
-	case sourceHuaguo, sourceWuguo, sourcePiguo:
+	case sourceHuaguo, sourceWuguo:
 		return d.fetchMaccmsCatalogPage(ctx, source, page, category)
 	case sourceChaoguo:
 		return d.fetchChaoguoCatalogPage(ctx, page, category)
@@ -93,6 +97,9 @@ func (d *Downloader) fetchDuanjuCatalogPage(ctx context.Context, source string, 
 
 func (d *Downloader) fetchDuanjuDetail(ctx context.Context, source, sourceID string) (Drama, []Chapter, error) {
 	source = canonicalProviderSource(source)
+	if spec, found := duanjuSourceSpecFor(source); found && spec.Kind == "maccms" {
+		return d.fetchMaccmsDetail(ctx, source, sourceID)
+	}
 	switch source {
 	case sourceYaguo:
 		return d.fetchYaguoDetail(ctx, sourceID)
@@ -108,7 +115,7 @@ func (d *Downloader) fetchDuanjuDetail(ctx context.Context, source, sourceID str
 		return d.fetchXingguoDetail(ctx, sourceID)
 	case sourceNiuguo:
 		return d.fetchNiuguoDetail(ctx, sourceID)
-	case sourceHuaguo, sourceWuguo, sourcePiguo:
+	case sourceHuaguo, sourceWuguo:
 		return d.fetchMaccmsDetail(ctx, source, sourceID)
 	case sourceChaoguo:
 		return d.fetchChaoguoDetail(ctx, sourceID)
@@ -118,6 +125,9 @@ func (d *Downloader) fetchDuanjuDetail(ctx context.Context, source, sourceID str
 
 func (d *Downloader) searchDuanju(ctx context.Context, source, query string) ([]Drama, error) {
 	source = canonicalProviderSource(source)
+	if spec, found := duanjuSourceSpecFor(source); found && spec.Kind == "maccms" {
+		return d.searchMaccms(ctx, source, query)
+	}
 	switch source {
 	case sourceYaguo:
 		return d.searchYaguo(ctx, query)
@@ -133,7 +143,7 @@ func (d *Downloader) searchDuanju(ctx context.Context, source, query string) ([]
 		return d.searchXingguo(ctx, query)
 	case sourceNiuguo:
 		return d.searchNiuguo(ctx, query)
-	case sourceHuaguo, sourceWuguo, sourcePiguo:
+	case sourceHuaguo, sourceWuguo:
 		return d.searchMaccms(ctx, source, query)
 	case sourceChaoguo:
 		items, _, err := d.searchChaoguoPage(ctx, query, 1)
@@ -157,6 +167,11 @@ func (d *Downloader) searchDuanjuPage(ctx context.Context, source, query string,
 func duanjuSupportsSearch(source string) bool {
 	spec, found := duanjuSourceSpecFor(source)
 	return found && spec.Searcher
+}
+
+func duanjuSourceIsSingle(source string) bool {
+	spec, found := duanjuSourceSpecFor(source)
+	return found && spec.Single
 }
 
 func duanjuSupportsPaging(source string) bool {
@@ -225,6 +240,23 @@ func (d *Downloader) resolveDuanjuWebPage(ctx context.Context, source, pageURL, 
 		return providerMedia{}, err
 	}
 	address := maccmsNormalizePlaybackURL(maccmsPlayerURL(body))
+	// 部分站点的播放数据指向一个播放器包装页而不是媒体地址（例如 hsckyun 的
+	// share 页），需要再取一层才能拿到真正的清单。限制为两跳，避免在异常
+	// 页面上反复跟随。
+	for hop := 0; hop < 2 && address != ""; hop++ {
+		if duanjuLooksLikeMedia(address) || !isProviderHTTPMediaURL(address) {
+			break
+		}
+		nested, err := d.fetchProviderText(ctx, address, firstNonEmpty(referer, pageURL))
+		if err != nil {
+			break
+		}
+		next := maccmsNormalizePlaybackURL(maccmsPlayerURL(nested))
+		if next == "" || next == address {
+			break
+		}
+		address = next
+	}
 	if address == "" {
 		return providerMedia{}, fmt.Errorf("%s未返回有效播放地址，请刷新章节后重试", duanjuSourceName(source))
 	}

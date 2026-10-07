@@ -17,6 +17,8 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Rect
 import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.util.Rational
 import android.view.InputDevice
@@ -65,6 +67,36 @@ class MainActivity : FlutterActivity() {
         super.setRequestedOrientation(
             if (televisionMode) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else requestedOrientation
         )
+    }
+
+    /// 系统里是否开着 VPN。站源出口被拒时，只有确实挂着代理才值得换到物理网络。
+    private fun vpnActive(): Boolean {
+        val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        return manager.allNetworks.any { network ->
+            manager.getNetworkCapabilities(network)
+                ?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+        }
+    }
+
+    private fun physicalNetwork(manager: ConnectivityManager): Network? {
+        return manager.allNetworks.firstOrNull { network ->
+            val capabilities = manager.getNetworkCapabilities(network) ?: return@firstOrNull false
+            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return@firstOrNull false
+            if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+                return@firstOrNull false
+            }
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+        }
+    }
+
+    private fun bindPhysicalNetwork(enabled: Boolean): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
+        val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        if (!enabled) return manager.bindProcessToNetwork(null)
+        val target = physicalNetwork(manager) ?: return false
+        return manager.bindProcessToNetwork(target)
     }
 
     private fun playbackPower(): Map<String, Any?> {
@@ -139,6 +171,11 @@ class MainActivity : FlutterActivity() {
                                 }
                                 result.success(null)
                             }
+                        }
+                        "vpnActive" -> result.success(runCatching { vpnActive() }.getOrDefault(false))
+                        "bindPhysicalNetwork" -> {
+                            val enabled = call.argument<Boolean>("enabled") ?: false
+                            result.success(runCatching { bindPhysicalNetwork(enabled) }.getOrDefault(false))
                         }
                         "playbackPower" -> result.success(runCatching { playbackPower() }.getOrNull())
                         "systemProxy" -> {

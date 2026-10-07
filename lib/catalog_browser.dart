@@ -305,7 +305,11 @@ class CatalogBrowser {
         };
         entry.items = items.values.toList();
         entry.page = result.page;
-        entry.nextPage = result.warning.isEmpty ? result.page + 1 : page;
+        // hasMore 为真说明后面还有内容，必须推进页码；否则带警示时会反复
+        // 请求同一页，分页搜索的「加载更多」就会一直原地打转。
+        entry.nextPage = result.hasMore || result.warning.isEmpty
+            ? result.page + 1
+            : page;
         entry.hasMore =
             (query.isEmpty || SourceSite.byId(source).pagedSearch) &&
             (result.hasMore || result.warning.isNotEmpty);

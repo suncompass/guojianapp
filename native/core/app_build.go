@@ -6,9 +6,29 @@ var buildAllSources = "false"
 
 var errNativeBuildSource = errors.New("当前版本不包含此站源")
 
+// 只装明确认定为绿色的站源。这里用白名单而不是「排除成人站源」：新接入的
+// 站源在人工确认之前不会自动进入可用列表，避免成人站源再次漏进来。
+var nativeGreenSources = map[string]bool{
+	sourceHongguo:   true,
+	sourceYaguo:     true,
+	sourceMaoguo:    true,
+	sourceFanguo:    true,
+	sourceGuanguo:   true,
+	sourceHeguo:     true,
+	sourceXingguo:   true,
+	sourceHuaguo:    true,
+	sourceNiuguo:    true,
+	sourceWuguo:     true,
+	sourceMiguo:     true,
+	sourceShuangguo: true,
+}
+
 func nativeSourceAvailable(source string) bool {
 	source = canonicalProviderSource(source)
-	return source == sourceHongguo || buildAllSources == "true" && isHuangguoProviderSource(source)
+	if buildAllSources == "true" {
+		return isHuangguoProviderSource(source)
+	}
+	return nativeGreenSources[source] && isHuangguoProviderSource(source)
 }
 
 func nativeDramaAvailable(drama nativeDrama) bool {

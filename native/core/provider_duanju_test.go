@@ -34,8 +34,8 @@ func TestDuanjuRegistryKeepsDistinctIdentitiesFromExistingSources(t *testing.T) 
 	for _, source := range existing {
 		seen[source] = true
 	}
-	if len(duanjuProviderCatalog) != 11 {
-		t.Fatalf("duanju catalog should register 11 sources, got %d", len(duanjuProviderCatalog))
+	if len(duanjuProviderCatalog) != 12 {
+		t.Fatalf("duanju catalog should register 12 sources, got %d", len(duanjuProviderCatalog))
 	}
 	for _, spec := range duanjuProviderCatalog {
 		if seen[spec.ID] {
@@ -338,19 +338,26 @@ func TestDuanjuHeguoParsesNextDataWrappedResponses(t *testing.T) {
 }
 
 func TestDuanjuSearchAndPagingSupportMatchesCatalog(t *testing.T) {
-	supported := []string{sourceYaguo, sourceMaoguo, sourceFanguo, sourceGuanguo, sourceHeguo, sourceXingguo, sourceHuaguo, sourceNiuguo, sourcePiguo, sourceWuguo}
+	supported := []string{sourceYaguo, sourceMaoguo, sourceFanguo, sourceGuanguo, sourceHeguo, sourceXingguo, sourceHuaguo, sourceNiuguo, sourceWuguo, sourceMiguo, sourceShuangguo}
 	for _, source := range supported {
 		if !duanjuSupportsSearch(source) {
 			t.Fatalf("%s should support online search", source)
 		}
 	}
-	if duanjuSupportsSearch("shuangguo") || duanjuSupportsSearch("muguo") {
+	if duanjuSupportsSearch("muguo") {
 		t.Fatal("removed sources must not advertise search")
 	}
 	if duanjuSupportsSearch(sourceHongguo) {
 		t.Fatal("duanju search support leaked onto an existing source")
 	}
 	for _, source := range supported {
+		if source == sourceMiguo {
+			// 米果的分类页不分页（后续页返回同一批条目），只提供搜索。
+			if duanjuSupportsPaging(source) {
+				t.Fatalf("%s must not advertise paging", source)
+			}
+			continue
+		}
 		if !duanjuSupportsPaging(source) {
 			t.Fatalf("%s should support paging", source)
 		}

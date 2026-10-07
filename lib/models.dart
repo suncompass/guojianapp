@@ -6,31 +6,20 @@ class SourceSite {
   final String name;
   final String description;
 
-  /// 红果是本版本唯一的站源：在线搜索与搜索建议都由它提供。
-  bool get onlineSearch => id == hongguo.id;
+  /// 绿色短剧站源（原生核心 nativeGreenSources 白名单里的 11 个）。
+  bool get isDuanjuSource => duanjuValues.any((site) => site.id == id);
+
+  /// 站源自带在线搜索：红果走官网与名称索引，短剧站源走各自的接口或网页搜索。
+  bool get onlineSearch => id == hongguo.id || isDuanjuSource;
+
+  /// 搜索联想只有红果提供，其余站源没有联想接口。
   bool get searchSuggestions => id == hongguo.id;
 
-  /// 目录续载由原生核心负责，这里不做额外的搜索分页。
-  bool get pagedSearch => false;
+  /// 还能继续加载下一页：红果已接入真分页，短剧站源按原生核心声明的分页标记。
+  /// 米果的分类页不分页（后续页会返回同一批条目），因此不在名单里。
+  bool get pagedSearch => id == hongguo.id || duanjuPaged;
 
-  String get groupId => id;
-  String get groupName => name;
-
-  static const hongguo = SourceSite('hongguo', '红果', '短剧 · 漫剧 · AI 剧');
-  static const values = [hongguo];
-  static const knownValues = values;
-  static const allValues = values;
-
-  /// 历史内置过的第三方站源：本版本不再提供，但旧数据与旧设备广播里仍会出现。
-  /// 读取旧记录时必须认得它们，否则升级后原有用户的站源权限会被判成无效配置。
-  static const retiredIds = {
-    'huangdou',
-    'huangju',
-    'yeguo',
-    'dsd',
-    'huangguo-video',
-    'huangguoai',
-    'cloudfront',
+  bool get duanjuPaged => const {
     'yaguo',
     'maoguo',
     'fanguo',
@@ -39,13 +28,68 @@ class SourceSite {
     'xingguo',
     'huaguo',
     'niuguo',
-    'piguo',
     'wuguo',
+    'shuangguo',
+  }.contains(id);
+
+  String get groupId => id;
+  String get groupName => name;
+
+  static const hongguo = SourceSite('hongguo', '红果', '短剧 · 漫剧 · AI 剧');
+
+  /// 绿色短剧站源，与原生核心 nativeGreenSources 白名单逐条对应。
+  /// 成人站源不进这份名单：它们只在原生核心保留解析常量，不注册也不可用。
+  static const duanjuValues = [
+    SourceSite('yaguo', '芽果', '星芽短剧 · 登录接口'),
+    SourceSite('maoguo', '猫果', '七猫短剧 · 签名接口'),
+    SourceSite('fanguo', '饭果', '西饭短剧 · 搜索接口'),
+    SourceSite('guanguo', '观果', '围观短剧 · 分类接口'),
+    SourceSite('heguo', '河果', '河马剧场 · 网页接口'),
+    SourceSite('xingguo', '星果', '星星短剧 · 连载接口'),
+    SourceSite('huaguo', '花果', '花生短剧 · 网页目录'),
+    SourceSite('niuguo', '牛果', '牛牛短剧 · 分类接口'),
+    SourceSite('wuguo', '伍果', '五五短剧 · 网页目录'),
+    SourceSite('miguo', '米果', '大米星球 · 网页目录'),
+    SourceSite('shuangguo', '爽果', '短剧网 · 网页目录'),
+  ];
+
+  static const values = [hongguo, ...duanjuValues];
+  static const knownValues = values;
+  static const allValues = values;
+
+  /// 历史内置过、如今不再提供的站源：成人站源、已下线站源与黄果家族。
+  /// 旧数据与旧设备广播里仍会出现，读取旧记录时必须认得它们，
+  /// 否则升级后原有用户的站源权限会被判成无效配置。
+  static const retiredIds = {
+    'huangdou',
+    'huangguo',
+    'huangju',
+    'yeguo',
+    'dsd',
+    'huangguo-video',
+    'huangguoai',
+    'cloudfront',
+    'piguo',
     'chaoguo',
+    'yanguo',
+    'taoguo',
+    'youguo',
+    'liuguo',
+    'meiguo',
+    'chengguo',
+    'xiaoguo',
+    'yingguo',
+    'luguo',
+    'liguo',
+    'juguo',
+    'zaoguo',
+    'ningguo',
+    'mangguo',
   };
-  static bool isAvailable(String id) => id == hongguo.id;
-  static bool isKnown(String id) => id == hongguo.id || retiredIds.contains(id);
-  static SourceSite byId(String id) => hongguo;
+  static bool isAvailable(String id) => values.any((site) => site.id == id);
+  static bool isKnown(String id) => isAvailable(id) || retiredIds.contains(id);
+  static SourceSite byId(String id) =>
+      values.firstWhere((site) => site.id == id, orElse: () => hongguo);
 }
 
 class SourceGroup {

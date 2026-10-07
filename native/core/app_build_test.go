@@ -135,3 +135,21 @@ func TestNativeBuildPreservesForeignDownloadRecordsAndRestrictsScheduling(t *tes
 		}
 	}
 }
+
+// 单红果鉴版本只放行绿色站源：白名单里的站源必须已注册且可用，
+// 名单外的站源（成人站源、已下线站源、未知标识）一律不可用。
+func TestNativeBuildShipsOnlyGreenSources(t *testing.T) {
+	for source := range nativeGreenSources {
+		if !isHuangguoProviderSource(source) {
+			t.Fatalf("whitelisted source %q is not a registered provider source", source)
+		}
+		if !nativeSourceAvailable(source) {
+			t.Fatalf("whitelisted source %q is unavailable in this build", source)
+		}
+	}
+	for _, source := range []string{sourceChaoguo, sourceYanguo, sourceHuangdou, sourceDSD, "unknown"} {
+		if nativeSourceAvailable(source) {
+			t.Fatalf("%q must not be available in the green-only build", source)
+		}
+	}
+}

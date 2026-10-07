@@ -12,7 +12,7 @@ func TestDuanjuRankingBoardsCoverEverySource(t *testing.T) {
 	want := map[string]int{
 		sourceYaguo: 2, sourceMaoguo: 1, sourceFanguo: 3, sourceGuanguo: 1,
 		sourceHeguo: 3, sourceXingguo: 1, sourceHuaguo: 1, sourceNiuguo: 5,
-		sourcePiguo: 3, sourceWuguo: 5, sourceChaoguo: 8,
+		sourceMiguo: 6, sourceShuangguo: 8, sourceWuguo: 5, sourceChaoguo: 8,
 	}
 	got := map[string]int{}
 	for _, board := range rankingBoards {
@@ -50,7 +50,7 @@ func TestDuanjuRankingBoardCategoriesMatchTheirSource(t *testing.T) {
 }
 
 func TestDuanjuRankingRoutesThroughTheSourceCatalog(t *testing.T) {
-	for _, source := range []string{sourceHuaguo, sourceWuguo, sourcePiguo} {
+	for _, source := range []string{sourceHuaguo, sourceWuguo, sourceMiguo} {
 		var board rankingBoard
 		found := false
 		for _, candidate := range rankingBoards {
