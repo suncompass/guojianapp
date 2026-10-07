@@ -32,6 +32,7 @@ import 'player_episode_transition.dart';
 import 'player_interactions.dart';
 import 'player_menu.dart';
 import 'player_panel_transition.dart';
+import 'player_viewport_layout.dart';
 import 'screen_awake.dart';
 import 'search_cache.dart';
 import 'television_controls.dart';
@@ -1387,7 +1388,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       _automaticFullscreenSuppressed = !fullscreen;
     });
     try {
-      if (Platform.isWindows) {
+      if (!_mobile && Platform.isWindows) {
         await windowManager.setFullScreen(fullscreen);
       } else if (_mobile) {
         await (_orientationController?.setPlayback(
@@ -1825,73 +1826,44 @@ class _PlayerScreenState extends State<PlayerScreen>
                       ),
                     ],
                   ),
-            body: pictureInPicture
-                ? _videoPane(context)
-                : SafeArea(
-                    top: false,
-                    bottom: !fullscreen,
-                    maintainBottomViewPadding: true,
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final desktop = constraints.maxWidth >= 840;
-                        if (fullscreen) {
-                          return _videoPane(context);
-                        }
-                        if (desktop ||
-                            constraints.maxWidth >
-                                constraints.maxHeight * 1.3) {
-                          return Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  children: [
-                                    Expanded(child: _videoPane(context)),
-                                  ],
-                                ),
-                              ),
-                              SizedBox(
-                                width: desktop ? 312 : 210,
-                                child: _episodePanel(),
-                              ),
-                            ],
-                          );
-                        }
-                        if (_mobile) {
-                          return Column(
-                            children: [
-                              Expanded(
-                                child: _videoPane(
-                                  context,
-                                  outputSize: Size(
-                                    constraints.maxWidth,
-                                    constraints.maxWidth / _aspectRatio,
-                                  ),
-                                ),
-                              ),
-                              _mobilePlaybackPanel(
-                                availableHeight: constraints.maxHeight,
-                              ),
-                            ],
-                          );
-                        }
-                        final height = (constraints.maxWidth / _aspectRatio)
-                            .clamp(0.0, constraints.maxHeight * .64);
-                        return Column(
-                          children: [
-                            SizedBox(
-                              height: height,
-                              width: double.infinity,
-                              child: _videoPane(context),
-                            ),
-                            Expanded(child: _episodePanel()),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
+            body: SafeArea(
+              top: false,
+              bottom: !fullscreen && !pictureInPicture,
+              left: !pictureInPicture,
+              right: !pictureInPicture,
+              maintainBottomViewPadding: true,
+              child: LayoutBuilder(builder: _playbackLayout),
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _playbackLayout(BuildContext context, BoxConstraints constraints) {
+    final desktop = constraints.maxWidth >= 840;
+    final sidePanel =
+        desktop || constraints.maxWidth > constraints.maxHeight * 1.3;
+    final videoHeight = (constraints.maxWidth / _aspectRatio).clamp(
+      0.0,
+      constraints.maxHeight * .64,
+    );
+    final panel = sidePanel
+        ? SizedBox(width: desktop ? 312 : 210, child: _episodePanel())
+        : _mobile
+        ? _mobilePlaybackPanel(availableHeight: constraints.maxHeight)
+        : SizedBox(
+            height: constraints.maxHeight - videoHeight,
+            child: _episodePanel(),
+          );
+    return PlayerViewportLayout(
+      fullscreen: _showFullscreen || _pictureInPictureVisible,
+      axis: sidePanel ? Axis.horizontal : Axis.vertical,
+      duration: _pictureInPictureVisible
+          ? Duration.zero
+          : const Duration(milliseconds: 220),
+      video: _videoPane(context),
+      panel: panel,
     );
   }
 
@@ -1908,7 +1880,13 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
   }
 
-  Widget _videoPane(BuildContext context, {Size? outputSize}) {
+  Widget _videoPane(BuildContext context) {
+    // 横竖屏只交换屏幕长短边，原生输出不跟着全屏或面板动画反复改尺寸。
+    final screenSize = MediaQuery.sizeOf(context);
+    final outputWidth = _aspectRatio >= 1
+        ? screenSize.longestSide
+        : screenSize.shortestSide;
+    final outputSize = Size(outputWidth, outputWidth / _aspectRatio);
     final videoTheme = _television
         ? televisionTheme(AppTheme.dark)
         : AppTheme.dark;
@@ -1998,9 +1976,10 @@ class _PlayerScreenState extends State<PlayerScreen>
         ),
       ],
     );
-    // 固定媒体层的布局约束，并在 LayoutBuilder 外构建，动画帧只改变
-    // FittedBox 的合成变换；控制栏仍按实际可见区域布局，不随画面缩放。
-    final stableOutput = outputSize == null || widget.videoBuilder != null
+    // 普通、全屏与画中画共用同一个媒体分支。不能在切换时拆掉
+    // StableVideoViewport，否则原生 Surface 会先销毁再创建，造成闪屏。
+    // 控制栏始终独立覆盖在实际可见区域，不随视频合成层缩放。
+    final stableOutput = widget.videoBuilder != null
         ? null
         : StableVideoViewport(
             outputSize: outputSize,
@@ -2030,21 +2009,11 @@ class _PlayerScreenState extends State<PlayerScreen>
             children: [
               if (widget.videoBuilder != null)
                 widget.videoBuilder!(layeredControls)
-              else if (stableOutput != null) ...[
+              else ...[
                 const ColoredBox(color: Colors.black),
-                stableOutput,
+                stableOutput!,
                 layeredControls,
-              ] else if (_surfaceOutput) ...[
-                const ColoredBox(color: Colors.black),
-                _videoSurfaceHost(settled),
-                layeredControls,
-              ] else
-                Video(
-                  controller: _video!,
-                  fit: BoxFit.contain,
-                  wakelock: false,
-                  controls: (_) => layeredControls,
-                ),
+              ],
               if (_error != null && !hideOverlayForPictureInPicture)
                 ColoredBox(
                   color: Colors.black.withValues(alpha: .9),
@@ -2130,17 +2099,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       ),
     );
     final ratio = MediaQuery.devicePixelRatioOf(context);
-    if (outputSize != null) {
-      // 手机折叠只改变可见区域：无需逐帧重建视频、控制栏和错误覆盖层。
-      _reportVideoViewport(outputSize * ratio);
-      return pane;
-    }
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        _reportVideoViewport(constraints.biggest * ratio);
-        return pane;
-      },
-    );
+    _reportVideoViewport(outputSize * ratio);
+    return pane;
   }
 
   Widget _mobilePlaybackPanel({required double availableHeight}) => Theme(

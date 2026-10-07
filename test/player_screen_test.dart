@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/models.dart';
 import 'package:duanju_app/player_screen.dart';
+import 'package:duanju_app/player_controls.dart';
 import 'package:duanju_app/player_episode_transition.dart';
 import 'package:duanju_app/app_layout.dart';
 import 'package:duanju_app/search_cache.dart';
@@ -428,6 +429,129 @@ void main() {
     );
   }
 
+  for (final initiallyVisible in [true, false]) {
+    testWidgets('hold hides controls from visible=$initiallyVisible', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      try {
+        final repository = RouteRepository();
+        final player = ScriptedPlayer();
+        await mount(tester, repository, player, size: const Size(390, 844));
+        final surface = find.byKey(const ValueKey('player-gesture-surface'));
+        final chrome = find.byKey(const ValueKey('player-controls-chrome'));
+        final controls = tester.widget<PlayerControls>(
+          find.byType(PlayerControls),
+        );
+        final position = player.state.position;
+        for (final x in [.1, .5, .9]) {
+          await tester.pump(const Duration(milliseconds: 700));
+          final rect = tester.getRect(surface);
+          final point = rect.topLeft + Offset(rect.width * x, rect.height * .3);
+          final visible = tester.widget<AnimatedOpacity>(chrome).opacity == 1;
+          if (visible != initiallyVisible) {
+            await tester.tapAt(point);
+            await tester.pump(const Duration(milliseconds: 350));
+          }
+          final gesture = await tester.startGesture(point);
+          await tester.pump(const Duration(milliseconds: 400));
+          await controls.interactions.pendingRates;
+          expect(player.state.rate, 2);
+          expect(player.state.position, position, reason: '长按任何区域都不能跳进度');
+          expect(find.text('2 倍速 · 松开恢复'), findsOneWidget);
+          expect(tester.widget<AnimatedOpacity>(chrome).opacity, 0);
+          expect(find.byTooltip('暂停播放').hitTestable(), findsNothing);
+          // 缓冲事件也不能在长按期间重新唤醒控制栏。
+          player.setBuffering(true);
+          await tester.pump();
+          expect(tester.widget<AnimatedOpacity>(chrome).opacity, 0);
+          player.setBuffering(false);
+          await tester.pump();
+          await gesture.up();
+          await tester.pump();
+          await controls.interactions.pendingRates;
+          expect(player.state.rate, 1);
+          expect(player.state.playing, isTrue);
+          expect(tester.widget<AnimatedOpacity>(chrome).opacity, 0);
+          await tester.pump(const Duration(milliseconds: 1300));
+          expect(tester.widget<AnimatedOpacity>(chrome).opacity, 0);
+          expect(find.text('恢复 1.0 倍速'), findsNothing);
+        }
+        // 主动轻点仍可唤出控制栏，不把隐藏状态锁死。
+        await tester.tapAt(
+          tester.getRect(surface).topLeft + const Offset(80, 100),
+        );
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(tester.widget<AnimatedOpacity>(chrome).opacity, 1);
+        await unmount(tester, player);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+  }
+
+  for (final portraitVideo in [true, false]) {
+    testWidgets('fullscreen retains state portrait=$portraitVideo', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      try {
+        final repository = RouteRepository();
+        final player = ScriptedPlayer();
+        await mount(tester, repository, player, size: const Size(390, 844));
+        player.videoSize(
+          portraitVideo ? 1080 : 1920,
+          portraitVideo ? 1920 : 1080,
+        );
+        await settleOperations(tester);
+        await tester.pump(const Duration(seconds: 4));
+        final controlFinder = find.byType(PlayerControls);
+        final controlState = tester.state(controlFinder);
+        final controls = tester.widget<PlayerControls>(controlFinder);
+        final surface = find.byKey(const ValueKey('player-gesture-surface'));
+        final surfaceElement = tester.element(surface);
+        final chrome = find.byKey(const ValueKey('player-controls-chrome'));
+        final opened = player.opened.length;
+        final position = player.state.position;
+        final initialHeight = tester.getSize(surface).height;
+        expect(tester.widget<AnimatedOpacity>(chrome).opacity, 0);
+        controls.onFullscreen();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(tester.getSize(surface).height, greaterThan(initialHeight));
+        if (!portraitVideo) {
+          tester.view.physicalSize = const Size(844, 390);
+        }
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 240));
+        expect(tester.widget<PlayerControls>(controlFinder).fullscreen, isTrue);
+        expect(tester.state(controlFinder), same(controlState));
+        expect(tester.element(surface), same(surfaceElement));
+        expect(tester.widget<AnimatedOpacity>(chrome).opacity, 0);
+        expect(find.byKey(const ValueKey('player-panel-toggle')), findsNothing);
+        tester.widget<PlayerControls>(controlFinder).onFullscreen();
+        await tester.pump();
+        tester.view.physicalSize = const Size(390, 844);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 240));
+        expect(
+          tester.widget<PlayerControls>(controlFinder).fullscreen,
+          isFalse,
+        );
+        expect(tester.state(controlFinder), same(controlState));
+        expect(tester.element(surface), same(surfaceElement));
+        expect(tester.widget<AnimatedOpacity>(chrome).opacity, 0);
+        expect(tester.getSize(surface).height, closeTo(initialHeight, .01));
+        expect(player.opened, hasLength(opened));
+        expect(player.state.position, position);
+        expect(player.state.playing, isTrue);
+        await unmount(tester, player);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+  }
+
   testWidgets('panel animation does not rebuild the video on each frame', (
     tester,
   ) async {
@@ -712,6 +836,7 @@ void main() {
       // 横视频横屏仍为全屏播放，也不显示折叠入口。
       player.videoSize(1920, 1080);
       await settleOperations(tester);
+      await tester.pump(const Duration(milliseconds: 220));
       expect(toggle, findsNothing);
       expect(find.byKey(const ValueKey('play-episode-2')), findsNothing);
       tester.view.physicalSize = const Size(390, 844);

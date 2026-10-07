@@ -111,6 +111,7 @@ class _PlayerControlsState extends State<PlayerControls> {
   bool _visible = true;
   bool _suppressAutoPlaybackStart = false;
   bool _lastPlaying = false;
+  bool _wasBoosting = false;
   bool _panelActive = false;
   double? _seekValue;
   Timer? _progressTimer;
@@ -189,17 +190,27 @@ class _PlayerControlsState extends State<PlayerControls> {
         } else {
           _visible = false;
         }
-      } else if (widget.panelOpen != oldWidget.panelOpen ||
-          widget.fullscreen != oldWidget.fullscreen) {
+      } else if (widget.panelOpen != oldWidget.panelOpen) {
         _visible = true;
       }
+      // 全屏切换沿用当前显隐状态，不让隐藏的控件重新闪入。
       _scheduleHide();
     }
   }
 
   void _interactionChanged() {
     if (!mounted) return;
-    if (widget.interactions.feedback.isNotEmpty) {
+    final boosting = widget.interactions.boosting;
+    final endedBoost = _wasBoosting && !boosting;
+    _wasBoosting = boosting;
+    // 倍速提示独立于控制栏；松开后的恢复提示也不能唤醒播放按钮。
+    if (boosting) {
+      _hideTimer?.cancel();
+      setState(() => _visible = false);
+    } else if (endedBoost) {
+      setState(() {});
+      _scheduleHide();
+    } else if (widget.interactions.feedback.isNotEmpty) {
       _show();
     } else if (!(_hideTimer?.isActive ?? false)) {
       _scheduleHide();
@@ -230,7 +241,7 @@ class _PlayerControlsState extends State<PlayerControls> {
   }
 
   void _show() {
-    if (!mounted) return;
+    if (!mounted || widget.interactions.boosting) return;
     if (!_visible) setState(() => _visible = true);
     _scheduleHide();
   }
@@ -289,6 +300,7 @@ class _PlayerControlsState extends State<PlayerControls> {
   }
 
   bool get _chromeVisible {
+    if (widget.interactions.boosting) return false;
     final state = widget.player.state;
     return !widget.enabled ||
         _visible ||
@@ -342,8 +354,11 @@ class _PlayerControlsState extends State<PlayerControls> {
               child: ExcludeFocus(
                 excluding: !visible,
                 child: AnimatedOpacity(
+                  key: const ValueKey('player-controls-chrome'),
                   opacity: visible ? 1 : 0,
-                  duration: const Duration(milliseconds: 180),
+                  duration: widget.interactions.boosting
+                      ? Duration.zero
+                      : const Duration(milliseconds: 180),
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
