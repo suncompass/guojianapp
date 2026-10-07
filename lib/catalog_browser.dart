@@ -172,8 +172,6 @@ class CatalogBrowser {
     for (final session in _sessions.values) {
       session.generation++;
     }
-    await repository.cancelCatalog();
-    if (request != _generation) throw AppFailure('已取消加载');
     final choice = query.isEmpty ? _choice(group, category) : null;
     final requests = choice != null && !choice.category.local
         ? choice.requests
@@ -221,6 +219,25 @@ class CatalogBrowser {
         warning: failures.values.toSet().join('；'),
       );
     }
+
+    // 切回已加载的分类时，在第一次 await 前交还会话快照，避免界面先清空
+    // 再闪现加载动画。只复用完整且有效的结果，保留已加载页数及续页游标；
+    // 显式刷新、缓存同步、搜索和加载更多仍走原来的读取流程。
+    final reuseSession =
+        useCache &&
+        !cacheOnly &&
+        !force &&
+        !more &&
+        query.isEmpty &&
+        sourceOrder.isNotEmpty &&
+        sourceOrder.every((source) {
+          final entry = session.entries[source]!;
+          return entry.page > 0 && entry.fresh;
+        });
+    if (reuseSession) onCached?.call(snapshot());
+    await repository.cancelCatalog();
+    if (request != _generation) throw AppFailure('已取消加载');
+    if (reuseSession) return snapshot();
 
     var emitted = 0;
     var lastEmit = DateTime.fromMillisecondsSinceEpoch(0);
