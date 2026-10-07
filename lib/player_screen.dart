@@ -1388,6 +1388,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       _automaticFullscreenSuppressed = !fullscreen;
     });
     try {
+      // 系统旋转会先对当前窗口取快照；必须等不含选集面板的帧画完，
+      // 否则旋转动画与残影里会带上旧的面板内容。
+      await WidgetsBinding.instance.endOfFrame;
       if (!_mobile && Platform.isWindows) {
         await windowManager.setFullScreen(fullscreen);
       } else if (_mobile) {
@@ -1848,16 +1851,31 @@ class _PlayerScreenState extends State<PlayerScreen>
       0.0,
       constraints.maxHeight * .64,
     );
-    final panel = sidePanel
-        ? SizedBox(width: desktop ? 312 : 210, child: _episodePanel())
-        : _mobile
-        ? _mobilePlaybackPanel(availableHeight: constraints.maxHeight)
-        : SizedBox(
-            height: constraints.maxHeight - videoHeight,
-            child: _episodePanel(),
-          );
+    final fullscreen = _showFullscreen || _pictureInPictureVisible;
+    // 全屏时不构建选集内容：只做透明和裁剪，横屏重布局期间仍会残留
+    // 面板像素。槽位尺寸保持不变，收起动画的节奏不受影响。
+    const black = ColoredBox(color: Colors.black);
+    final Widget panel;
+    if (sidePanel) {
+      panel = SizedBox(
+        width: desktop ? 312 : 210,
+        child: fullscreen ? black : _episodePanel(),
+      );
+    } else if (_mobile) {
+      panel = fullscreen
+          ? SizedBox(
+              height: constraints.maxHeight * _mobilePanelHeightFraction,
+              child: black,
+            )
+          : _mobilePlaybackPanel(availableHeight: constraints.maxHeight);
+    } else {
+      panel = SizedBox(
+        height: constraints.maxHeight - videoHeight,
+        child: fullscreen ? black : _episodePanel(),
+      );
+    }
     return PlayerViewportLayout(
-      fullscreen: _showFullscreen || _pictureInPictureVisible,
+      fullscreen: fullscreen,
       axis: sidePanel ? Axis.horizontal : Axis.vertical,
       duration: _pictureInPictureVisible
           ? Duration.zero

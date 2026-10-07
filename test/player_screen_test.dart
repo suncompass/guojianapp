@@ -502,10 +502,20 @@ void main() {
     ) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       final orientations = <List<String>>[];
+      final panelsAtOrientationRequest = <bool>[];
+      final episodeKey = const ValueKey('play-episode-2');
+      // 只有选集按钮真实存在过，才能用它的消失证明面板没有残留。
+      bool panelMounted() {
+        final found = find.byKey(episodeKey, skipOffstage: false);
+        return found.evaluate().isNotEmpty;
+      }
+
       final messenger = tester.binding.defaultBinaryMessenger;
       // Widget 测试没有真实系统旋转回包，显式完成平台调用以释放旋转锁。
       messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
         if (call.method == 'SystemChrome.setPreferredOrientations') {
+          // 系统在这一刻对窗口取快照，此时必须已经画过没有面板的帧。
+          panelsAtOrientationRequest.add(panelMounted());
           orientations.add(List<String>.from(call.arguments as List));
         }
         return null;
@@ -533,15 +543,26 @@ void main() {
         final position = player.state.position;
         final initialHeight = tester.getSize(surface).height;
         expect(tester.widget<AnimatedOpacity>(chrome).opacity, 0);
+        expect(panelMounted(), isTrue, reason: '进入全屏前必须实际存在选集，避免断言空跑');
         controls.onFullscreen();
         await tester.pump();
+        expect(panelMounted(), isFalse, reason: '进入全屏的首帧不能保留选集内容');
         await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump();
         expect(tester.getSize(surface).height, greaterThan(initialHeight));
+        // 旋转请求发出时窗口快照已生成，树里必须没有选集内容。
+        expect(panelsAtOrientationRequest, isNotEmpty);
+        expect(
+          panelsAtOrientationRequest.first,
+          isFalse,
+          reason: '系统旋转前必须先绘制不含选集面板的帧',
+        );
         if (!portraitVideo) {
           tester.view.physicalSize = const Size(844, 390);
         }
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 240));
+        expect(panelMounted(), isFalse, reason: '横屏稳定后也不能挂载选集内容');
         expect(tester.widget<PlayerControls>(controlFinder).fullscreen, isTrue);
         expect(orientations, hasLength(1));
         expect(orientations.single, hasLength(2));
