@@ -746,9 +746,10 @@ class NativeRepository extends AppRepository {
               upload: upload,
               uploadKey: uploadKey,
             );
-            if (retried['ok'] == true) return retried['data'] is Map
-                ? Map<String, dynamic>.from(retried['data'] as Map)
-                : <String, dynamic>{};
+            if (retried['ok'] == true)
+              return retried['data'] is Map
+                  ? Map<String, dynamic>.from(retried['data'] as Map)
+                  : <String, dynamic>{};
             response['error'] = retried['error'] ?? response['error'];
             response['code'] = retried['code'] ?? response['code'];
           } finally {

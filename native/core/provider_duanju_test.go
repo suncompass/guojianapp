@@ -428,15 +428,19 @@ func TestDuanjuRejectsMismatchedSourceIDsAndCategories(t *testing.T) {
 
 func TestDuanjuSourceAvailabilityFollowsBuildVariant(t *testing.T) {
 	previous := buildAllSources
+	t.Cleanup(func() { buildAllSources = previous })
 	buildAllSources = "false"
-	if nativeSourceAvailable(sourceYaguo) {
-		t.Fatal("hongguo-only build must not expose duanju sources")
+	// 单红果鉴已接入绿色站源，构建差异应由白名单外的站源验证。
+	if !nativeSourceAvailable(sourceYaguo) || !nativeSourceAvailable(sourceWuguo) {
+		t.Fatal("green-only build must expose green duanju sources")
+	}
+	if nativeSourceAvailable(sourceChaoguo) {
+		t.Fatal("green-only build must not expose adult duanju sources")
 	}
 	buildAllSources = "true"
-	if !nativeSourceAvailable(sourceYaguo) || !nativeSourceAvailable(sourceWuguo) {
-		t.Fatal("all-sources build must expose duanju sources")
+	if !nativeSourceAvailable(sourceYaguo) || !nativeSourceAvailable(sourceWuguo) || !nativeSourceAvailable(sourceChaoguo) {
+		t.Fatal("all-sources build must expose registered duanju sources")
 	}
-	buildAllSources = previous
 }
 
 func TestDuanjuNormalizePlaybackURLStripsTrailingPunctuation(t *testing.T) {
