@@ -166,10 +166,9 @@ void main() {
     final before = browser.categories(group);
     expect(browser.categories(group)[1], same(before[1]));
     // 分组名称相同但实际站源不同，不能命中已撤销站源的分类。
-    expect(
-      browser.categories(const SourceGroup('hongguo', '红果', [])),
-      [CatalogCategory.all],
-    );
+    expect(browser.categories(const SourceGroup('hongguo', '红果', [])), [
+      CatalogCategory.all,
+    ]);
 
     repository.cachedPages['hongguo|'] = CatalogPage(const [
       Drama(
