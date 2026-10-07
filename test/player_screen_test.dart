@@ -453,6 +453,10 @@ void main() {
             await tester.tapAt(point);
             await tester.pump(const Duration(milliseconds: 350));
           }
+          expect(
+            tester.widget<AnimatedOpacity>(chrome).opacity,
+            initiallyVisible ? 1 : 0,
+          );
           final gesture = await tester.startGesture(point);
           await tester.pump(const Duration(milliseconds: 400));
           await controls.interactions.pendingRates;
@@ -472,8 +476,10 @@ void main() {
           await controls.interactions.pendingRates;
           expect(player.state.rate, 1);
           expect(player.state.playing, isTrue);
+          expect(controls.interactions.suppressTap, isTrue);
           expect(tester.widget<AnimatedOpacity>(chrome).opacity, 0);
           await tester.pump(const Duration(milliseconds: 1300));
+          expect(controls.interactions.suppressTap, isFalse);
           expect(tester.widget<AnimatedOpacity>(chrome).opacity, 0);
           expect(find.text('恢复 1.0 倍速'), findsNothing);
         }
@@ -495,6 +501,18 @@ void main() {
       tester,
     ) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final orientations = <List<String>>[];
+      final messenger = tester.binding.defaultBinaryMessenger;
+      // Widget 测试没有真实系统旋转回包，显式完成平台调用以释放旋转锁。
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'SystemChrome.setPreferredOrientations') {
+          orientations.add(List<String>.from(call.arguments as List));
+        }
+        return null;
+      });
+      addTearDown(() {
+        messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+      });
       try {
         final repository = RouteRepository();
         final player = ScriptedPlayer();
@@ -525,6 +543,8 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 240));
         expect(tester.widget<PlayerControls>(controlFinder).fullscreen, isTrue);
+        expect(orientations, hasLength(1));
+        expect(orientations.single, hasLength(2));
         expect(tester.state(controlFinder), same(controlState));
         expect(tester.element(surface), same(surfaceElement));
         expect(tester.widget<AnimatedOpacity>(chrome).opacity, 0);
@@ -537,6 +557,11 @@ void main() {
         expect(
           tester.widget<PlayerControls>(controlFinder).fullscreen,
           isFalse,
+        );
+        expect(orientations, hasLength(2));
+        expect(
+          orientations.last,
+          DeviceOrientation.values.map((value) => value.toString()).toList(),
         );
         expect(tester.state(controlFinder), same(controlState));
         expect(tester.element(surface), same(surfaceElement));

@@ -49,11 +49,11 @@ class PlayerInteractions extends ChangeNotifier {
   bool _disposed = false;
   double _unmutedVolume = 100;
   String _feedback = '';
-  DateTime _ignoreTapUntil = DateTime(2000);
+  Timer? _tapGuard;
 
   String get feedback => _feedback;
   bool get boosting => _boosting;
-  bool get suppressTap => DateTime.now().isBefore(_ignoreTapUntil);
+  bool get suppressTap => _tapGuard?.isActive ?? false;
   Future<void> get pendingRates => _rates;
 
   void hint(String message, {bool persistent = false}) {
@@ -117,11 +117,20 @@ class PlayerInteractions extends ChangeNotifier {
     }
   }
 
+  void _suppressTapBriefly() {
+    // 按持续时间保护松手后的轻点，不依赖会被校时改变的墙上时钟；
+    // Widget 测试的虚拟时间也能与长按、提示计时器保持一致。
+    _tapGuard?.cancel();
+    _tapGuard = Timer(const Duration(milliseconds: 600), () {
+      _tapGuard = null;
+    });
+  }
+
   void cancel() {
     if (_disposed) return;
     if (_pointers.isNotEmpty) {
       _cancelUntilRelease = true;
-      _ignoreTapUntil = DateTime.now().add(const Duration(milliseconds: 600));
+      _suppressTapBriefly();
     }
     _pointer = null;
     _origin = null;
@@ -162,7 +171,7 @@ class PlayerInteractions extends ChangeNotifier {
   void pointerUp(PointerUpEvent event) {
     _pointers.remove(event.pointer);
     if (_cancelUntilRelease) {
-      _ignoreTapUntil = DateTime.now().add(const Duration(milliseconds: 600));
+      _suppressTapBriefly();
       if (_pointers.isEmpty) _cancelUntilRelease = false;
       return;
     }
@@ -176,7 +185,7 @@ class PlayerInteractions extends ChangeNotifier {
         delta.dy.abs() > delta.dx.abs() * 1.5 &&
         event.timeStamp - _started < const Duration(milliseconds: 1500);
     if (_moved || _held) {
-      _ignoreTapUntil = DateTime.now().add(const Duration(milliseconds: 600));
+      _suppressTapBriefly();
     }
     _pointer = null;
     _origin = null;
@@ -187,7 +196,7 @@ class PlayerInteractions extends ChangeNotifier {
   void pointerCancel(PointerCancelEvent event) {
     _pointers.remove(event.pointer);
     cancel();
-    _ignoreTapUntil = DateTime.now().add(const Duration(milliseconds: 600));
+    _suppressTapBriefly();
     if (_pointers.isEmpty) _cancelUntilRelease = false;
   }
 
@@ -273,6 +282,7 @@ class PlayerInteractions extends ChangeNotifier {
     _disposed = true;
     _holdTimer?.cancel();
     _hintTimer?.cancel();
+    _tapGuard?.cancel();
     if (_boosting) unawaited(_setRate(baseSpeed()));
     _boosting = false;
     _playing.cancel();
