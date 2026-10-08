@@ -168,6 +168,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   double _resumePosition = 0;
   bool _rotating = false;
   Completer<void>? _rotationSettled;
+  // 整次 _rotate 收尾（含 _rotating 复位）后兑现。等 _rotationSettled 只能
+  // 说明尺寸已换好，不能保证 _rotate 已经跑完 finally。
+  Completer<void>? _rotationTask;
   Orientation? _rotationTarget;
   Size? _rotationSizeBefore;
   bool _rotationWaitsForSize = false;
@@ -1422,7 +1425,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     final previous = _fullscreen;
     final targetOrientation = _rotationTargetFor(fullscreen);
     final rotationWaiter = Completer<void>();
+    final rotationTask = Completer<void>();
     _rotationSettled = rotationWaiter;
+    _rotationTask = rotationTask;
     _rotationTarget = targetOrientation;
     _rotationSizeBefore = MediaQuery.sizeOf(context);
     _rotationWaitsForSize =
@@ -1480,6 +1485,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
       if (!rotationWaiter.isCompleted) rotationWaiter.complete();
       _rotating = false;
+      // 旋转整体收尾后才兑现任务，等待方读到的 _rotating 一定是 false。
+      if (identical(_rotationTask, rotationTask)) _rotationTask = null;
+      if (!rotationTask.isCompleted) rotationTask.complete();
       if (mounted && !_closed) _scheduleSystemUi();
     }
   }
@@ -1589,6 +1597,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     // Android 的旋转快照可能把旧竖屏选集层一起带到新横屏窗口。
     final rotation = _rotationSettled?.future;
     if (rotation != null) await _waitForRotationToSettle(rotation);
+    // 再等整次旋转收尾：等待方的回调顺序由注册先后决定，不保证旋转先复位
+    // _rotating；一旦被下面这行拦掉，这次点击就不会再补开面板。
+    final task = _rotationTask;
+    if (task != null) await task;
     if (!mounted || _closed || _rotating || _panelOpen) return;
     _interactions.cancel();
     setState(() => _panelOpen = true);
@@ -1762,12 +1774,17 @@ class _PlayerScreenState extends State<PlayerScreen>
   @override
   void dispose() {
     final rotationWaiter = _rotationSettled;
+    final rotationTask = _rotationTask;
     _rotationSettled = null;
+    _rotationTask = null;
     _rotationTarget = null;
     _rotationSizeBefore = null;
     _rotationWaitsForSize = false;
     if (rotationWaiter != null && !rotationWaiter.isCompleted) {
       rotationWaiter.complete();
+    }
+    if (rotationTask != null && !rotationTask.isCompleted) {
+      rotationTask.complete();
     }
     _setPhase(PlaybackPhase.closed);
     _screenAwake.disable();
