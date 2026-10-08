@@ -1,6 +1,15 @@
 # 红果鉴
 
-Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.3.2+2108（开发快照）**。
+Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.3.3+2109（开发快照）**。
+
+### 0.3.3：手机横屏即全屏，选集改为贴右窄抽屉
+
+- 根因：`_showFullscreen` 的自动全屏分支要求 `_aspectRatio >= 1`，竖屏短剧（9:16）在手机横屏时不满足，`_playbackLayout` 因此走并排侧栏分支渲染真实的 `_episodePanel()`，右侧约 1/4 屏宽被选集内容占满、视频被挤到左侧；这同时解释了它为什么不需要点开选集就自动出现，以及前几轮「旋转快照」「弹窗竞态」修复为什么不生效。
+- 手机横屏一律按全屏播放：`_showFullscreen` 去掉宽高比与自动全屏抑制（`_automaticFullscreenSuppressed` 字段删除）两个条件，视频铺满整屏，右侧不再自动挂出选集侧栏；并排侧栏只保留给桌面 / 平板宽屏（`!_mobile && (宽 ≥ 840 或 宽 > 高 × 1.3)`）。
+- 退出全屏的方向归还同步收紧：手机横屏时退出全屏改为把设备转回竖屏（原先只有横屏视频会归还方向，竖屏短剧会留在横屏并回到侧栏布局）。
+- 选集弹窗在横屏收成贴右窄抽屉：`PlayerMenu` 横屏选集宽度由 `min(440, 宽 × 0.6)` 收到约 1/4 屏宽（844 宽实测 211），用 `constraints: BoxConstraints()` 覆盖 `Dialog` 默认的 `minWidth: 280`，`insetPadding` 贴右时避让刘海与侧边系统栏；倍速 / 清晰度 / 播放设置保留原宽度。
+- 回归用例：新增 `landscape fullscreen keeps the video full width`（竖屏短剧横屏断言视频区满宽、不挂载选集、点开后抽屉约 1/4 屏宽且贴右不越界）；`collapsed panel follows auto advance and survives rotation` 的横屏断言由「转横屏用侧栏」改为「铺满整屏且不挂选集」。
+- 验证：CI 的 `dart` job 通过（`dart format`、`dart analyze` 与全部 `flutter test` 用例）；顺带修掉两个自 0.3.2 起就红、与本次改动无关的用例：平台回包里量尺寸导致记录列表为空，以及旋转等待留下的悬挂 2 秒定时器。
 
 ### 0.3.2：弱化长按倍速提示，补全全屏黑边覆盖
 
@@ -98,9 +107,9 @@ Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、�
 
 - 下载角标：收起后面板是下载进度的唯一展示位置，因此新增 `player-download-badge`（下载图标 +「N 集 P%」，取活动任务平均进度）。仅在「已收起且确有活动任务」时以 10 秒低频探测 `repository.downloads()`，任务结束或面板展开即停止，`dispose` 一并取消定时器；前置校验 `supportsDownloads && canDownload`，探测失败静默忽略、不影响播放。角标可点，直接展开面板并切到下载页。
 
-- 显示范围：折叠入口与角标都在手机竖屏分支内，全屏与宽屏是左右分栏、没有可收起的模块，两者不受影响；移动端竖向滑动已被「上滑下一集 / 下滑上一集」占用，所以不引入手势，只用按钮。
+- 显示范围：折叠入口与角标都在手机竖屏分支内，宽屏是左右分栏、没有可收起的模块，两者不受影响；移动端竖向滑动已被「上滑下一集 / 下滑上一集」占用，所以不引入手势，只用按钮。
 
-- 验证：本机无 Dart 工具链，编译与用例由 CI 的 `dart` job 覆盖（默认 + ALL_SOURCES 两个变体）。`test/player_screen_test.dart` 新增 4 组用例：`$platform portrait panel collapses without restarting playback`（平台矩阵 + 底部安全区，断言收起后视频区变高、头部贴住安全区、面板内容离屏、播放位置 / 倍速 / 播放状态不变）、`collapsing preserves the selected tab and paused playback`、`collapsed panel follows auto advance and survives rotation`（收起态跟随自动连播，转横屏用侧栏且不带着竖屏折叠状态）、`collapsed panel keeps download progress reachable`（角标出现，点击回到下载页）。
+- 验证：本机无 Dart 工具链，编译与用例由 CI 的 `dart` job 覆盖（默认 + ALL_SOURCES 两个变体）。`test/player_screen_test.dart` 新增 4 组用例：`$platform portrait panel collapses without restarting playback`（平台矩阵 + 底部安全区，断言收起后视频区变高、头部贴住安全区、面板内容离屏、播放位置 / 倍速 / 播放状态不变）、`collapsing preserves the selected tab and paused playback`、`collapsed panel follows auto advance and survives rotation`（收起态跟随自动连播，转横屏按全屏播放且不带着竖屏折叠状态）、`collapsed panel keeps download progress reachable`（角标出现，点击回到下载页）。
 
 - 同批修复 `scripts/publish_release.py` 的草稿读回缺陷（来自 PR #1）：`create_draft` 建出草稿后用 `GET /releases/tags/{tag}` 读回，而该接口只返回已发布 release（GitHub 文档原文 “Get a published release with the specified tag.”），因此在从无 release 的仓库首次按 tag 发布时必然抛 `New draft release cannot be read`；上游仓库只有 `latest` 一个 release，一直走「直接命中已有 release」分支，从未触发。改为新增 `draft(tag)`，用列表接口 `GET /releases?per_page=100`（`--paginate --slurp`）按 `tag_name` 且 `draft` 为真匹配，`create_draft` 改用它。`scripts/test_publish_release.py` 的 `FakeRelease` 同步复现真实语义（`release()` 看不到草稿、`draft()` 能看到），新增 3 项用例覆盖「首次发布经列表接口找到草稿」「列表里没有草稿时报错」「同 tag 的已发布 release 不被误认成草稿」，由 CI 的 `scripts` job 执行。待验收：按 tag 首次发布在读完草稿后还要 `gh release upload <tag>`，若该步同样无法按 tag 解析草稿，失败点会从读回前移到上传，只有真打一次 tag 才能确认。
 
@@ -277,7 +286,7 @@ Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、�
 | 画中画 | 0.2.20 在 Android 手机 / 平板播放器接入画中画按钮；0.2.37 起进入画中画前先隐藏 App 自绘控制层和弹幕覆盖并等待一帧，小窗只保留视频画面，转场使用视频区域 `sourceRectHint`，播放 / 暂停 / 返回应用 / 关闭交给系统 PiP 控件。0.2.38 修正非全屏进入 PiP 时下方 Tab 内容也被缩进小窗的问题，PiP 请求期间整页只渲染播放器。进入画中画后保持当前播放和进度保存，退出后恢复常规生命周期处理。Android TV、Windows 与 iOS 暂未接入系统级画中画，真实设备行为待集中验证 |
 | 画质增强 | 仅 Windows 桌面端显示入口并运行增强链路；播放器“清晰度”面板可操作画质增强，支持关闭 / 自动 / 省电增强 / 清晰优先，开启后显示通用／真人、动漫／AI 动漫与跟随分类。增强应用后可点“原画对比”，再次点击恢复。Android 手机、Android TV 与 iOS 隐藏该功能，不初始化增强后端，避免移动端和电视端卡死 |
 | 弹幕 | 红果在线播放默认开启；播放器侧边圆形“弹”字按钮可关闭、查看状态及失败重试，电视仍可在播放设置中操作。开关按本地用户保存并进入备份，本地播放不加载弹幕 |
-| 横竖屏 | 电视模式统一保持横屏，竖屏视频按原比例居中；手机竖屏播放页不再显示额外标题栏，视频下方紧贴 Tab 内容区，选集和下载在视频下方用连续滚动紧凑方格显示，不遮挡画面；横屏采用视频与选集分栏。横屏视频随手机旋转进入全屏，也可手动全屏；退出后恢复方向跟随。全屏顶部只放返回和标题并避让状态栏，底部统一提供播放、进度、选集、倍速 / 画质、推送、弹幕、画中画和全屏，桌面端额外提供音量，底部控件整体避让虚拟导航栏；全屏设置与选集弹窗保持播放器暗色 |
+| 横竖屏 | 电视模式统一保持横屏，竖屏视频按原比例居中；手机竖屏播放页不再显示额外标题栏，视频下方紧贴 Tab 内容区，选集和下载在视频下方用连续滚动紧凑方格显示，不遮挡画面；手机横屏一律按全屏播放（视频铺满整屏，右侧不再自动挂出选集侧栏），选集改为贴右约 1/4 屏宽的覆盖抽屉；并排分栏只保留给桌面 / 平板宽屏。横屏视频随手机旋转进入全屏，也可手动全屏；退出后恢复方向跟随。全屏顶部只放返回和标题并避让状态栏，底部统一提供播放、进度、选集、倍速 / 画质、推送、弹幕、画中画和全屏，桌面端额外提供音量，底部控件整体避让虚拟导航栏；全屏设置与选集弹窗保持播放器暗色 |
 | Windows | 播放画面获焦时，空格播放 / 暂停，左方向键后退 5 秒，右方向键轻按前进 5 秒、长按临时 3 倍速，上下方向键调音量 5%，M 静音，F / F11 / Ctrl+F 全屏，Esc 退出全屏或返回；按钮、菜单和列表保留自身键盘操作 |
 | 外观 | “更多 → 设置与备份 → 外观主题”选择浅色、深色或跟随系统；默认跟随系统，记住本机手动选择，配置备份也包含主题 |
 | 下载 | 播放页“下载”Tab 和详情页下载入口均可选择分集与画质；按剧分组搜索、筛选，标题栏进入多选 / 全选；支持批量暂停、继续、重试、删除及清理任务但保留视频。“更新本剧”补新增或缺失分集 |
