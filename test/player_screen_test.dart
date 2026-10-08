@@ -4,6 +4,7 @@ import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/models.dart';
 import 'package:duanju_app/player_screen.dart';
 import 'package:duanju_app/player_controls.dart';
+import 'package:duanju_app/player_viewport_layout.dart';
 import 'package:duanju_app/player_episode_transition.dart';
 import 'package:duanju_app/app_layout.dart';
 import 'package:duanju_app/search_cache.dart';
@@ -628,6 +629,11 @@ void main() {
         controls.onFullscreen();
         await tester.pump();
         expect(panelMounted(), isFalse, reason: '进入全屏的首帧不能保留选集内容');
+        expect(
+          find.byType(PlayerViewportLayout),
+          findsNothing,
+          reason: '全屏不能把选集槽位留在树里，否则旋转快照会带上竖屏网格',
+        );
         await tester.pump(const Duration(milliseconds: 100));
         await tester.pump();
         expect(tester.getSize(surface).height, greaterThan(initialHeight));
@@ -651,6 +657,7 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 240));
         expect(panelMounted(), isFalse, reason: '横屏稳定后也不能挂载选集内容');
+        expect(find.byType(PlayerViewportLayout), findsNothing);
         expect(tester.widget<PlayerControls>(controlFinder).fullscreen, isTrue);
         expect(orientations, hasLength(1));
         expect(orientations.single, hasLength(2));
@@ -825,12 +832,13 @@ void main() {
 
       final controlFinder = find.byType(PlayerControls);
       expect(tester.widget<PlayerControls>(controlFinder).fullscreen, isTrue);
+      expect(find.byType(PlayerViewportLayout), findsNothing);
       final surface = tester.getRect(
         find.byKey(const ValueKey('player-gesture-surface')),
       );
       expect(surface.width, 844, reason: '横屏视频区必须占满整屏宽度');
       expect(
-        find.byKey(const ValueKey('play-episode-2')),
+        find.byKey(const ValueKey('play-episode-2'), skipOffstage: false),
         findsNothing,
         reason: '横屏不再自动挂出选集侧栏',
       );

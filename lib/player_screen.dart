@@ -1444,6 +1444,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       // 否则旋转动画与残影里会带上旧的面板内容。
       await WidgetsBinding.instance.endOfFrame;
       if (!mounted || _closed) return;
+      // 光栅提交晚于 endOfFrame；再等一帧，避免快照仍是竖屏面板。
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || _closed) return;
       if (!_mobile && Platform.isWindows) {
         await windowManager.setFullScreen(fullscreen);
       } else if (_mobile) {
@@ -1937,6 +1940,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     BoxConstraints constraints,
     EdgeInsets horizontalInsets,
   ) {
+    final video = _videoPane(context, horizontalInsets);
+    // 全屏必须把选集移出树。透明/黑占位仍会把竖屏网格图层留给
+    // 系统旋转快照，真机右侧就会露出 3/6/9 这种竖屏才有的残列。
+    if (_showFullscreen || _pictureInPictureVisible) {
+      return video;
+    }
     final desktop = constraints.maxWidth >= 840;
     // 并排侧栏只在桌面/平板宽屏出现：手机横屏一律是全屏，右侧不再挂侧栏。
     final sidePanel =
@@ -1946,37 +1955,19 @@ class _PlayerScreenState extends State<PlayerScreen>
       0.0,
       constraints.maxHeight * .64,
     );
-    final fullscreen = _showFullscreen || _pictureInPictureVisible;
-    // 全屏时不构建选集内容：只做透明和裁剪，横屏重布局期间仍会残留
-    // 面板像素。槽位尺寸保持不变，收起动画的节奏不受影响。
-    const black = ColoredBox(color: Colors.black);
-    final Widget panel;
-    if (sidePanel) {
-      panel = SizedBox(
-        width: desktop ? 312 : 210,
-        child: fullscreen ? black : _episodePanel(),
-      );
-    } else if (_mobile) {
-      panel = fullscreen
-          ? SizedBox(
-              height: constraints.maxHeight * _mobilePanelHeightFraction,
-              child: black,
-            )
-          : _mobilePlaybackPanel(availableHeight: constraints.maxHeight);
-    } else {
-      panel = SizedBox(
-        height: constraints.maxHeight - videoHeight,
-        child: fullscreen ? black : _episodePanel(),
-      );
-    }
+    final panel = sidePanel
+        ? SizedBox(width: desktop ? 312 : 210, child: _episodePanel())
+        : _mobile
+        ? _mobilePlaybackPanel(availableHeight: constraints.maxHeight)
+        : SizedBox(
+            height: constraints.maxHeight - videoHeight,
+            child: _episodePanel(),
+          );
     return PlayerViewportLayout(
-      fullscreen: fullscreen,
+      fullscreen: false,
       axis: sidePanel ? Axis.horizontal : Axis.vertical,
-      // 手机旋转前直接完成全屏布局，避免原生合成层保存收起中间帧。
-      duration: _pictureInPictureVisible || (_mobile && fullscreen)
-          ? Duration.zero
-          : const Duration(milliseconds: 220),
-      video: _videoPane(context, horizontalInsets),
+      duration: const Duration(milliseconds: 220),
+      video: video,
       panel: panel,
     );
   }

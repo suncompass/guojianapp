@@ -22,6 +22,7 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.util.Rational
 import android.view.InputDevice
+import android.view.WindowManager
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
@@ -64,6 +65,12 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun setRequestedOrientation(requestedOrientation: Int) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+            val params = window.attributes
+            params.rotationAnimation =
+                WindowManager.LayoutParams.ROTATION_ANIMATION_JUMPCUT
+            window.attributes = params
+        }
         super.setRequestedOrientation(
             if (televisionMode) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else requestedOrientation
         )
