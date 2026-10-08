@@ -973,10 +973,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   Future<void> _waitForRotationToSettle(Future<void>? waiter) async {
     if (waiter == null) return;
-    await Future.any<void>([
-      waiter,
-      Future<void>.delayed(const Duration(seconds: 2)),
-    ]);
+    // 用 timeout 而不是 Future.any + Future.delayed：前者在等待对象先完成时
+    // 会取消内部定时器，不给测试与真机留下悬挂的 2 秒定时器。
+    await waiter.timeout(const Duration(seconds: 2), onTimeout: () {});
     if (mounted && !_closed) {
       // 方向回包后再等一帧，确保 Dialog 读取到的是稳定的 MediaQuery 尺寸。
       await WidgetsBinding.instance.endOfFrame;

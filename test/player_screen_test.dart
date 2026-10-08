@@ -236,7 +236,8 @@ void main() {
     (tester) async {
       final repository = RouteRepository()..deferFallback = true;
       final player = ScriptedPlayer();
-      await mount(tester, repository, player);
+      // 显式竖屏：手机横屏一律是全屏，视频下方的选集不会构建。
+      await mount(tester, repository, player, size: const Size(390, 844));
       player.fail();
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
@@ -590,11 +591,27 @@ void main() {
       messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
         if (call.method == 'SystemChrome.setPreferredOrientations') {
           // 系统在这一刻对窗口取快照，此时必须已经画过没有面板的帧。
-          panelsAtOrientationRequest.add(panelMounted());
-          final surface = find.byKey(const ValueKey('player-gesture-surface'));
-          if (surface.evaluate().isNotEmpty) {
+          final panelPresent = panelMounted();
+          panelsAtOrientationRequest.add(panelPresent);
+          // 不跳过离屏节点：这一帧已经画完（_rotate 先 await endOfFrame），
+          // 视频区尺寸本身就是断言目标，是否被判为离屏与它无关。
+          final surface = find.byKey(
+            const ValueKey('player-gesture-surface'),
+            skipOffstage: false,
+          );
+          final surfaceFound = surface.evaluate().isNotEmpty;
+          if (surfaceFound) {
             viewportsAtOrientationRequest.add(tester.getSize(surface));
+          } else {
+            viewportsAtOrientationRequest.add(Size.zero);
           }
+          debugPrint(
+            'rotation request #${orientations.length + 1}: '
+            'args=${(call.arguments as List).length} panel=$panelPresent '
+            'surface=$surfaceFound '
+            'controls=${find.byType(PlayerControls, skipOffstage: false).evaluate().length} '
+            'screens=${find.byType(PlayerScreen, skipOffstage: false).evaluate().length}',
+          );
           orientations.add(List<String>.from(call.arguments as List));
         }
         return null;
@@ -623,6 +640,10 @@ void main() {
         final initialHeight = tester.getSize(surface).height;
         expect(tester.widget<AnimatedOpacity>(chrome).opacity, 0);
         expect(panelMounted(), isTrue, reason: '进入全屏前必须实际存在选集，避免断言空跑');
+        // 只统计本次全屏请求发出的平台调用，排除挂载阶段可能出现的杂散回包。
+        orientations.clear();
+        panelsAtOrientationRequest.clear();
+        viewportsAtOrientationRequest.clear();
         controls.onFullscreen();
         await tester.pump();
         expect(panelMounted(), isFalse, reason: '进入全屏的首帧不能保留选集内容');
@@ -697,7 +718,9 @@ void main() {
       player.videoSize(1920, 1080);
       await settleOperations(tester);
 
-      await tester.tap(find.byKey(const ValueKey('player-fullscreen')));
+      // 手机竖屏非全屏时，全屏入口是顶栏那个「旋转与全屏」图标（没有
+      // player-fullscreen 这个 key，那个 key 只在桌面控制行里）。
+      await tester.tap(find.byTooltip('旋转与全屏'));
       await tester.pump();
       expect(
         tester.widget<PlayerControls>(find.byType(PlayerControls)).fullscreen,
