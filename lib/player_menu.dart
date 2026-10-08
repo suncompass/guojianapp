@@ -80,6 +80,25 @@ class _PlayerMenuState extends State<PlayerMenu> {
     final size = MediaQuery.sizeOf(context);
     final landscape = size.width > size.height;
     final colors = Theme.of(context).colorScheme;
+    // 横屏（手机端即全屏）时菜单贴右收成覆盖抽屉：选集只占约 1/4 屏宽，
+    // 视频主体仍然可见；倍速/清晰度/设置需要更宽的阅读宽度，保持原宽度。
+    final narrowDrawer =
+        landscape && widget.section == PlayerMenuSection.episodes;
+    final double menuWidth = narrowDrawer
+        ? math.min(320.0, math.max(200.0, size.width * .25))
+        : landscape
+        ? math.min(440.0, size.width * .6)
+        : 600.0;
+    // 抽屉贴右时避让刘海与侧边系统栏，竖屏底部弹层避让手势条。
+    final viewPadding = MediaQuery.viewPaddingOf(context);
+    final menuInsets = landscape
+        ? EdgeInsets.fromLTRB(
+            12,
+            12,
+            12 + viewPadding.right,
+            12 + viewPadding.bottom,
+          )
+        : const EdgeInsets.all(12);
     final title = switch (widget.section) {
       PlayerMenuSection.episodes => '选集 · 共 ${widget.episodes.length} 集',
       PlayerMenuSection.speed => '播放倍速',
@@ -89,10 +108,13 @@ class _PlayerMenuState extends State<PlayerMenu> {
     return Dialog(
       key: const ValueKey('player-menu'),
       alignment: landscape ? Alignment.centerRight : Alignment.bottomCenter,
-      insetPadding: const EdgeInsets.all(12),
+      insetPadding: menuInsets,
+      // 覆盖 Dialog 默认的 minWidth 280，否则右侧抽屉收不到 1/4 屏宽。
+      constraints: const BoxConstraints(),
       backgroundColor: colors.surface,
       child: SizedBox(
-        width: landscape ? math.min(440, size.width * .6) : 600,
+        key: const ValueKey('player-menu-drawer'),
+        width: menuWidth,
         height: landscape ? size.height : size.height * .72,
         child: Column(
           children: [

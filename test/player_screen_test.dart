@@ -712,9 +712,13 @@ void main() {
       tester.view.physicalSize = const Size(844, 390);
       await settleOperations(tester);
       expect(find.byKey(const ValueKey('player-menu')), findsOneWidget);
-      final menu = tester.getRect(find.byKey(const ValueKey('player-menu')));
-      expect(menu.right, lessThanOrEqualTo(844));
-      expect(menu.left, greaterThanOrEqualTo(0));
+      // 横屏选集是贴右的窄抽屉：约 1/4 屏宽，且不越出屏幕。
+      final drawer = tester.getRect(
+        find.byKey(const ValueKey('player-menu-drawer')),
+      );
+      expect(drawer.width, closeTo(211, 1));
+      expect(drawer.left, greaterThan(844 * .6));
+      expect(drawer.right, lessThanOrEqualTo(844));
       expect(tester.takeException(), isNull);
       await unmount(tester, player);
     } finally {
@@ -791,6 +795,53 @@ void main() {
       );
       await unmount(tester, player);
     } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('landscape fullscreen keeps the video full width', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      return null;
+    });
+    try {
+      final repository = RouteRepository();
+      final player = ScriptedPlayer();
+      await mount(tester, repository, player, size: const Size(390, 844));
+      // 竖屏短剧：横过来同样按全屏播放，右侧不能自动让给选集侧栏。
+      player.videoSize(1080, 1920);
+      await settleOperations(tester);
+      tester.view.physicalSize = const Size(844, 390);
+      await settleOperations(tester);
+
+      final controlFinder = find.byType(PlayerControls);
+      expect(tester.widget<PlayerControls>(controlFinder).fullscreen, isTrue);
+      final surface = tester.getRect(
+        find.byKey(const ValueKey('player-gesture-surface')),
+      );
+      expect(surface.width, 844, reason: '横屏视频区必须占满整屏宽度');
+      expect(
+        find.byKey(const ValueKey('play-episode-2')),
+        findsNothing,
+        reason: '横屏不再自动挂出选集侧栏',
+      );
+
+      // 只有在点开选集时才出现，并且是约 1/4 屏宽的右侧覆盖抽屉。
+      await tester.tap(find.byKey(const ValueKey('player-episodes')));
+      await settleOperations(tester);
+      final drawer = tester.getRect(
+        find.byKey(const ValueKey('player-menu-drawer')),
+      );
+      expect(drawer.width, closeTo(211, 1), reason: '横屏选集收成约 1/4 屏宽');
+      expect(drawer.left, greaterThan(844 * .6), reason: '抽屉贴右');
+      expect(drawer.right, lessThanOrEqualTo(844), reason: '抽屉不越出屏幕');
+      expect(tester.takeException(), isNull);
+      await unmount(tester, player);
+    } finally {
+      messenger.setMockMethodCallHandler(SystemChannels.platform, null);
       debugDefaultTargetPlatformOverride = null;
     }
   });
@@ -1068,13 +1119,17 @@ void main() {
       expect(find.text('第 2 集 · 共 2 集'), findsOneWidget);
       expect(find.text('展开'), findsOneWidget);
 
-      // 竖视频横屏仍使用原来的侧栏，不把竖屏折叠状态带入侧栏。
+      // 竖视频横屏同样按全屏播放：视频铺满整屏，右侧不再自动挂出选集侧栏。
       player.videoSize(1080, 1920);
       await settleOperations(tester);
       tester.view.physicalSize = const Size(844, 390);
       await settleOperations(tester);
       expect(toggle, findsNothing);
-      expect(find.byKey(const ValueKey('play-episode-2')), findsOneWidget);
+      expect(find.byKey(const ValueKey('play-episode-2')), findsNothing);
+      final landscapeSurface = tester.getRect(
+        find.byKey(const ValueKey('player-gesture-surface')),
+      );
+      expect(landscapeSurface.width, 844, reason: '竖屏短剧横屏也要铺满宽度');
 
       // 横视频横屏仍为全屏播放，也不显示折叠入口。
       player.videoSize(1920, 1080);

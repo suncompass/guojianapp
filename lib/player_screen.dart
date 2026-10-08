@@ -119,7 +119,6 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _forceOnline = false;
   bool _localFailure = false;
   bool _fullscreen = false;
-  bool _automaticFullscreenSuppressed = false;
   bool _panelOpen = false;
   bool _mobilePanelCollapsed = false;
   static final _mobilePanelTheme = AppTheme.dark.copyWith(
@@ -931,14 +930,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     final television = AppLayout.isTelevision(context);
     if (_television != television) {
       _fullscreen = false;
-      _automaticFullscreenSuppressed = false;
       _interactions.cancel();
     }
     _television = television;
     _orientationController = AppOrientationScope.maybeOf(context);
     final orientation = MediaQuery.orientationOf(context);
     if (_lastOrientation != null && _lastOrientation != orientation) {
-      _automaticFullscreenSuppressed = false;
       _interactions.cancel();
     }
     _lastOrientation = orientation;
@@ -966,8 +963,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   Orientation? _rotationTargetFor(bool fullscreen) {
     if (!_mobile || _television) return null;
     if (!fullscreen) {
-      // 退出横屏全屏时，播放器回到竖屏；普通横屏布局不强行等待设备旋转。
-      return _lastOrientation == Orientation.landscape && _aspectRatio >= 1
+      // 手机横屏即全屏，退出全屏就是把设备转回竖屏。
+      return _lastOrientation == Orientation.landscape
           ? Orientation.portrait
           : null;
     }
@@ -1411,13 +1408,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
+  /// 手机横屏一律按全屏播放：视频铺满整屏，右侧不再自动挂出选集侧栏；
+  /// 选集只在用户点开时以窄抽屉覆盖在视频上（竖屏短剧横屏同样如此）。
   bool get _showFullscreen =>
       _television ||
       _fullscreen ||
-      (_mobile &&
-          !_automaticFullscreenSuppressed &&
-          _aspectRatio >= 1 &&
-          MediaQuery.orientationOf(context) == Orientation.landscape);
+      (_mobile && MediaQuery.orientationOf(context) == Orientation.landscape);
 
   Future<void> _rotate() async {
     if (_rotating || _television) {
@@ -1425,7 +1421,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
     final fullscreen = !_showFullscreen;
     final previous = _fullscreen;
-    final previousSuppressed = _automaticFullscreenSuppressed;
     final targetOrientation = _rotationTargetFor(fullscreen);
     final rotationWaiter = Completer<void>();
     _rotationSettled = rotationWaiter;
@@ -1437,7 +1432,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     _interactions.cancel();
     setState(() {
       _fullscreen = fullscreen;
-      _automaticFullscreenSuppressed = !fullscreen;
     });
     if ((!_rotationWaitsForSize && targetOrientation == null) ||
         (targetOrientation != null &&
@@ -1472,7 +1466,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (mounted && !_closed) {
         setState(() {
           _fullscreen = previous;
-          _automaticFullscreenSuppressed = previousSuppressed;
         });
         _notice('无法切换全屏，请重试');
       }
@@ -1946,8 +1939,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     EdgeInsets horizontalInsets,
   ) {
     final desktop = constraints.maxWidth >= 840;
+    // 并排侧栏只在桌面/平板宽屏出现：手机横屏一律是全屏，右侧不再挂侧栏。
     final sidePanel =
-        desktop || constraints.maxWidth > constraints.maxHeight * 1.3;
+        !_mobile &&
+        (desktop || constraints.maxWidth > constraints.maxHeight * 1.3);
     final videoHeight = (constraints.maxWidth / _aspectRatio).clamp(
       0.0,
       constraints.maxHeight * .64,
