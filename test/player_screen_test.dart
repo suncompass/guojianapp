@@ -124,6 +124,7 @@ void main() {
     ScriptedPlayer platform, {
     Size? size,
     FakeViewPadding? padding,
+    FakeViewPadding? systemPadding,
     ThemeData? theme,
     VoidCallback? onVideoBuild,
   }) async {
@@ -136,6 +137,8 @@ void main() {
       tester.view.padding = padding;
       tester.view.viewPadding = padding;
     }
+    // 沉浸全屏：系统栏已隐藏，但稳定内衬仍报告系统栏占位。
+    if (systemPadding != null) tester.view.viewPadding = systemPadding;
     final store = LocalStore(await SharedPreferences.getInstance());
     final detail = await repository.detail(FixtureRepository.free);
     await tester.pumpWidget(
@@ -496,6 +499,55 @@ void main() {
     });
   }
 
+  testWidgets('hold feedback paints no background over the picture', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      final repository = RouteRepository();
+      final player = ScriptedPlayer();
+      await mount(tester, repository, player, size: const Size(390, 844));
+      final surface = tester.getRect(
+        find.byKey(const ValueKey('player-gesture-surface')),
+      );
+      final controls = tester.widget<PlayerControls>(
+        find.byType(PlayerControls),
+      );
+      final gesture = await tester.startGesture(
+        surface.topLeft + Offset(surface.width * .5, surface.height * .3),
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+      await controls.interactions.pendingRates;
+      expect(player.state.rate, 2);
+      expect(find.text('2 倍速 · 松开恢复'), findsOneWidget);
+      final feedback = find.byKey(const ValueKey('player-gesture-feedback'));
+      expect(feedback, findsOneWidget);
+      final painted = <Widget>[];
+      tester.element(feedback).visitAncestorElements((element) {
+        if (element.widget is Align) return false;
+        painted.add(element.widget);
+        return true;
+      });
+      final boxes = [
+        ...painted.whereType<DecoratedBox>(),
+        ...painted.whereType<ColoredBox>(),
+        ...painted.whereType<Container>(),
+      ];
+      expect(boxes, isEmpty, reason: '长按倍速提示不能带底色，否则会盖住画面');
+      expect(
+        tester.widget<Text>(feedback).style?.shadows,
+        isNotEmpty,
+        reason: '去掉底色后必须靠阴影保证可读',
+      );
+      await gesture.up();
+      await tester.pump();
+      await controls.interactions.pendingRates;
+      await unmount(tester, player);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
   for (final portraitVideo in [true, false]) {
     testWidgets('fullscreen retains state portrait=$portraitVideo', (
       tester,
@@ -597,6 +649,63 @@ void main() {
       }
     });
   }
+
+  testWidgets('fullscreen keeps controls clear of the side system bar', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    final messenger = tester.binding.defaultBinaryMessenger;
+    // Widget 测试没有真实系统旋转回包，显式完成平台调用以释放旋转锁。
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      return null;
+    });
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+    try {
+      final repository = RouteRepository();
+      final player = ScriptedPlayer();
+      await mount(
+        tester,
+        repository,
+        player,
+        size: const Size(390, 844),
+        // 沉浸模式：系统栏隐藏后占位只留在稳定内衬里。
+        padding: const FakeViewPadding(),
+        systemPadding: const FakeViewPadding(right: 48),
+      );
+      player.videoSize(1920, 1080);
+      await settleOperations(tester);
+      final controlFinder = find.byType(PlayerControls);
+      tester.widget<PlayerControls>(controlFinder).onFullscreen();
+      await tester.pump();
+      tester.view.physicalSize = const Size(844, 390);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 240));
+      expect(tester.widget<PlayerControls>(controlFinder).fullscreen, isTrue);
+      final pane = tester.getRect(
+        find.byKey(const ValueKey('player-gesture-surface')),
+      );
+      expect(pane.width, 844, reason: '全屏后视频区应占满整屏宽度');
+      final episodes = find.byKey(const ValueKey('player-episodes'));
+      final duration = find.byKey(const ValueKey('player-duration'));
+      expect(episodes, findsOneWidget);
+      expect(duration, findsOneWidget);
+      expect(
+        tester.getRect(episodes).right,
+        lessThanOrEqualTo(pane.right - 48),
+        reason: '选集不能被右侧系统栏吃掉',
+      );
+      expect(
+        tester.getRect(duration).right,
+        lessThanOrEqualTo(pane.right - 48),
+        reason: '总时长不能被右侧系统栏吃掉',
+      );
+      await unmount(tester, player);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
 
   testWidgets('panel animation does not rebuild the video on each frame', (
     tester,

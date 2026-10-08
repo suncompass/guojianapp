@@ -1782,6 +1782,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     final title = widget.detail.drama.title;
     final fullscreen = _showFullscreen;
     final pictureInPicture = _pictureInPictureVisible;
+    final horizontalInsets = _horizontalInsetsOf(context);
     return PopScope(
       canPop: _television || !fullscreen,
       onPopInvokedWithResult: (didPop, result) {
@@ -1835,7 +1836,10 @@ class _PlayerScreenState extends State<PlayerScreen>
               left: !pictureInPicture,
               right: !pictureInPicture,
               maintainBottomViewPadding: true,
-              child: LayoutBuilder(builder: _playbackLayout),
+              child: LayoutBuilder(
+                builder: (context, constraints) =>
+                    _playbackLayout(context, constraints, horizontalInsets),
+              ),
             ),
           ),
         ),
@@ -1843,7 +1847,22 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Widget _playbackLayout(BuildContext context, BoxConstraints constraints) {
+  /// 沉浸全屏后系统栏会瞬时回到屏幕侧边，而 SafeArea 只避让当前可见的系统栏；
+  /// 这里给出两者的差值，交给控制层再让开一次。
+  EdgeInsets _horizontalInsetsOf(BuildContext context) {
+    final padding = MediaQuery.paddingOf(context);
+    final viewPadding = MediaQuery.viewPaddingOf(context);
+    return EdgeInsets.only(
+      left: (viewPadding.left - padding.left).clamp(0.0, double.infinity),
+      right: (viewPadding.right - padding.right).clamp(0.0, double.infinity),
+    );
+  }
+
+  Widget _playbackLayout(
+    BuildContext context,
+    BoxConstraints constraints,
+    EdgeInsets horizontalInsets,
+  ) {
     final desktop = constraints.maxWidth >= 840;
     final sidePanel =
         desktop || constraints.maxWidth > constraints.maxHeight * 1.3;
@@ -1880,7 +1899,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       duration: _pictureInPictureVisible
           ? Duration.zero
           : const Duration(milliseconds: 220),
-      video: _videoPane(context),
+      video: _videoPane(context, horizontalInsets),
       panel: panel,
     );
   }
@@ -1898,7 +1917,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
   }
 
-  Widget _videoPane(BuildContext context) {
+  Widget _videoPane(BuildContext context, EdgeInsets horizontalInsets) {
     // 横竖屏只交换屏幕长短边，原生输出不跟着全屏或面板动画反复改尺寸。
     final screenSize = MediaQuery.sizeOf(context);
     final outputWidth = _aspectRatio >= 1
@@ -1937,6 +1956,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             enhancement: _enhancementForUi,
             panelOpen: _panelOpen,
             fullscreen: _showFullscreen,
+            horizontalInsets: horizontalInsets,
             showOnPlaybackReady: _showControlsOnPlaybackReady,
             title: title,
             onTogglePlayback: _togglePlayback,

@@ -69,6 +69,7 @@ class PlayerControls extends StatefulWidget {
     this.onPush,
     this.onPictureInPicture,
     this.enhancement,
+    this.horizontalInsets = EdgeInsets.zero,
   });
 
   final Player player;
@@ -100,6 +101,10 @@ class PlayerControls extends StatefulWidget {
   final Future<void> Function()? onPush;
   final Future<void> Function()? onPictureInPicture;
   final VideoEnhancementController? enhancement;
+
+  /// 沉浸全屏时系统栏会瞬时回到屏幕侧边；SafeArea 只避让当前可见的系统栏，
+  /// 这里补上稳定内衬与已避让部分的差值，控件整排才不会压在系统栏下面。
+  final EdgeInsets horizontalInsets;
 
   @override
   State<PlayerControls> createState() => _PlayerControlsState();
@@ -380,9 +385,9 @@ class _PlayerControlsState extends State<PlayerControls> {
                       ),
                       Padding(
                         padding: EdgeInsets.fromLTRB(
-                          8,
+                          8 + widget.horizontalInsets.left,
                           _topChromeInset(),
-                          8,
+                          8 + widget.horizontalInsets.right,
                           _bottomChromeInset(),
                         ),
                         child: Stack(
@@ -668,7 +673,11 @@ class _PlayerControlsState extends State<PlayerControls> {
             ),
             SizedBox(
               width: 43,
-              child: Text(formatPosition(duration), style: timeStyle),
+              child: Text(
+                formatPosition(duration),
+                key: const ValueKey('player-duration'),
+                style: timeStyle,
+              ),
             ),
           ],
         ),
@@ -1101,14 +1110,24 @@ class _PlayerControlsState extends State<PlayerControls> {
       return IgnorePointer(
         child: Align(
           alignment: const Alignment(0, -.5),
-          child: Container(
-            margin: const EdgeInsets.all(16),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.black87,
-              borderRadius: BorderRadius.circular(10),
+          // 手势提示不画底色，长按倍速时不能盖住画面，靠描边阴影保证可读。
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              feedback,
+              key: const ValueKey('player-gesture-feedback'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                height: 1.2,
+                shadows: [
+                  Shadow(color: Colors.black, blurRadius: 8),
+                  Shadow(color: Colors.black, blurRadius: 3),
+                ],
+              ),
             ),
-            child: Text(feedback, textAlign: TextAlign.center),
           ),
         ),
       );
