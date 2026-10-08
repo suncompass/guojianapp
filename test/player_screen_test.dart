@@ -550,7 +550,10 @@ void main() {
       expect(text.style?.color?.a, closeTo(.35, .01));
       expect(text.style?.shadows, isNull);
       expect(tester.getRect(feedback).top, closeTo(surface.top + 44, .01));
-      expect(tester.getRect(feedback).center.dx, closeTo(surface.center.dx, .01));
+      expect(
+        tester.getRect(feedback).center.dx,
+        closeTo(surface.center.dx, .01),
+      );
       await gesture.up();
       await tester.pump();
       await controls.interactions.pendingRates;
@@ -737,8 +740,14 @@ void main() {
         pane,
         reason: '系统栏重新出现也不能压缩全屏视频区',
       );
-      expect(tester.getRect(episodes).right, lessThanOrEqualTo(pane.right - 48));
-      expect(tester.getRect(duration).right, lessThanOrEqualTo(pane.right - 48));
+      expect(
+        tester.getRect(episodes).right,
+        lessThanOrEqualTo(pane.right - 48),
+      );
+      expect(
+        tester.getRect(duration).right,
+        lessThanOrEqualTo(pane.right - 48),
+      );
       await unmount(tester, player);
     } finally {
       debugDefaultTargetPlatformOverride = null;

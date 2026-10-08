@@ -73,7 +73,10 @@ void main() {
             textDirection: TextDirection.ltr,
             child: RepaintBoundary(
               key: viewportKey,
-              child: ColoredBox(color: const Color(0xFFFF0000), child: viewport),
+              child: ColoredBox(
+                color: const Color(0xFFFF0000),
+                child: viewport,
+              ),
             ),
           ),
         );
