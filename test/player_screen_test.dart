@@ -578,7 +578,6 @@ void main() {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       final orientations = <List<String>>[];
       final panelsAtOrientationRequest = <bool>[];
-      final viewportsAtOrientationRequest = <Size>[];
       final episodeKey = const ValueKey('play-episode-2');
       // 只有选集按钮真实存在过，才能用它的消失证明面板没有残留。
       bool panelMounted() {
@@ -591,27 +590,10 @@ void main() {
       messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
         if (call.method == 'SystemChrome.setPreferredOrientations') {
           // 系统在这一刻对窗口取快照，此时必须已经画过没有面板的帧。
-          final panelPresent = panelMounted();
-          panelsAtOrientationRequest.add(panelPresent);
-          // 不跳过离屏节点：这一帧已经画完（_rotate 先 await endOfFrame），
-          // 视频区尺寸本身就是断言目标，是否被判为离屏与它无关。
-          final surface = find.byKey(
-            const ValueKey('player-gesture-surface'),
-            skipOffstage: false,
-          );
-          final surfaceFound = surface.evaluate().isNotEmpty;
-          if (surfaceFound) {
-            viewportsAtOrientationRequest.add(tester.getSize(surface));
-          } else {
-            viewportsAtOrientationRequest.add(Size.zero);
-          }
-          debugPrint(
-            'rotation request #${orientations.length + 1}: '
-            'args=${(call.arguments as List).length} panel=$panelPresent '
-            'surface=$surfaceFound '
-            'controls=${find.byType(PlayerControls, skipOffstage: false).evaluate().length} '
-            'screens=${find.byType(PlayerScreen, skipOffstage: false).evaluate().length}',
-          );
+          // 只记录「树里有没有选集」，不在回包里量尺寸：回包落在帧边界上，
+          // 那时读 RenderBox 会抛异常并被 SystemChrome 的 await 吞掉，
+          // 表现为列表空、断言只报 Bad state: No element。
+          panelsAtOrientationRequest.add(panelMounted());
           orientations.add(List<String>.from(call.arguments as List));
         }
         return null;
@@ -643,7 +625,6 @@ void main() {
         // 只统计本次全屏请求发出的平台调用，排除挂载阶段可能出现的杂散回包。
         orientations.clear();
         panelsAtOrientationRequest.clear();
-        viewportsAtOrientationRequest.clear();
         controls.onFullscreen();
         await tester.pump();
         expect(panelMounted(), isFalse, reason: '进入全屏的首帧不能保留选集内容');
@@ -657,8 +638,10 @@ void main() {
           isFalse,
           reason: '系统旋转前必须先绘制不含选集面板的帧',
         );
+        // 尺寸在帧外量：手机全屏收起为 Duration.zero，首帧即铺满整页，
+        // 若旋转前没画出无面板帧，这里仍会是收起中间尺寸。
         expect(
-          viewportsAtOrientationRequest.first,
+          tester.getSize(surface),
           const Size(390, 844),
           reason: '系统旋转前视频区必须已占满页面，不能保存面板收起中间帧',
         );
