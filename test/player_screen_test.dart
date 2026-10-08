@@ -682,6 +682,47 @@ void main() {
     });
   }
 
+  testWidgets('episode dialog waits for fullscreen rotation to settle', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      return null;
+    });
+    try {
+      final repository = RouteRepository();
+      final player = ScriptedPlayer();
+      await mount(tester, repository, player, size: const Size(390, 844));
+      player.videoSize(1920, 1080);
+      await settleOperations(tester);
+
+      await tester.tap(find.byKey(const ValueKey('player-fullscreen')));
+      await tester.pump();
+      expect(
+        tester.widget<PlayerControls>(find.byType(PlayerControls)).fullscreen,
+        isTrue,
+      );
+
+      // 在系统仍处于竖屏时点击选集，不能马上创建使用旧尺寸的 Dialog。
+      await tester.tap(find.byKey(const ValueKey('player-episodes')));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('player-menu')), findsNothing);
+
+      tester.view.physicalSize = const Size(844, 390);
+      await settleOperations(tester);
+      expect(find.byKey(const ValueKey('player-menu')), findsOneWidget);
+      final menu = tester.getRect(find.byKey(const ValueKey('player-menu')));
+      expect(menu.right, lessThanOrEqualTo(844));
+      expect(menu.left, greaterThanOrEqualTo(0));
+      expect(tester.takeException(), isNull);
+      await unmount(tester, player);
+    } finally {
+      messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
   testWidgets('fullscreen keeps controls clear of the side system bar', (
     tester,
   ) async {

@@ -168,6 +168,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   double _aspectRatio = 9 / 16;
   double _resumePosition = 0;
   bool _rotating = false;
+  Completer<void>? _rotationSettled;
+  Orientation? _rotationTarget;
+  Size? _rotationSizeBefore;
+  bool _rotationWaitsForSize = false;
   bool _television = false;
   AppOrientationController? _orientationController;
   bool get _pictureInPictureVisible =>
@@ -938,7 +942,48 @@ class _PlayerScreenState extends State<PlayerScreen>
       _interactions.cancel();
     }
     _lastOrientation = orientation;
+    _completeRotationIfSettled(orientation);
     _scheduleSystemUi();
+  }
+
+  void _completeRotationIfSettled(Orientation orientation) {
+    final target = _rotationTarget;
+    final waiter = _rotationSettled;
+    if (waiter == null) return;
+    final sizeChanged =
+        _rotationSizeBefore != null &&
+        MediaQuery.sizeOf(context) != _rotationSizeBefore;
+    final settled = target != null
+        ? orientation == target
+        : !_rotationWaitsForSize || sizeChanged;
+    if (!settled) return;
+    _rotationTarget = null;
+    _rotationSizeBefore = null;
+    _rotationWaitsForSize = false;
+    if (!waiter.isCompleted) waiter.complete();
+  }
+
+  Orientation? _rotationTargetFor(bool fullscreen) {
+    if (!_mobile || _television) return null;
+    if (!fullscreen) {
+      // 退出横屏全屏时，播放器回到竖屏；普通横屏布局不强行等待设备旋转。
+      return _lastOrientation == Orientation.landscape && _aspectRatio >= 1
+          ? Orientation.portrait
+          : null;
+    }
+    return _aspectRatio >= 1 ? Orientation.landscape : Orientation.portrait;
+  }
+
+  Future<void> _waitForRotationToSettle(Future<void>? waiter) async {
+    if (waiter == null) return;
+    await Future.any<void>([
+      waiter,
+      Future<void>.delayed(const Duration(seconds: 2)),
+    ]);
+    if (mounted && !_closed) {
+      // 方向回包后再等一帧，确保 Dialog 读取到的是稳定的 MediaQuery 尺寸。
+      await WidgetsBinding.instance.endOfFrame;
+    }
   }
 
   void _scheduleSystemUi() {
@@ -1381,12 +1426,26 @@ class _PlayerScreenState extends State<PlayerScreen>
     final fullscreen = !_showFullscreen;
     final previous = _fullscreen;
     final previousSuppressed = _automaticFullscreenSuppressed;
-    _interactions.cancel();
+    final targetOrientation = _rotationTargetFor(fullscreen);
+    final rotationWaiter = Completer<void>();
+    _rotationSettled = rotationWaiter;
+    _rotationTarget = targetOrientation;
+    _rotationSizeBefore = MediaQuery.sizeOf(context);
+    _rotationWaitsForSize =
+        targetOrientation == null && !_mobile && Platform.isWindows;
     _rotating = true;
+    _interactions.cancel();
     setState(() {
       _fullscreen = fullscreen;
       _automaticFullscreenSuppressed = !fullscreen;
     });
+    if ((!_rotationWaitsForSize && targetOrientation == null) ||
+        (targetOrientation != null &&
+            MediaQuery.orientationOf(context) == targetOrientation)) {
+      rotationWaiter.complete();
+      _rotationTarget = null;
+      _rotationWaitsForSize = false;
+    }
     try {
       // 系统旋转会先对当前窗口取快照；必须等不含选集面板的帧画完，
       // 否则旋转动画与残影里会带上旧的面板内容。
@@ -1408,6 +1467,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               ),
             ));
       }
+      await _waitForRotationToSettle(rotationWaiter.future);
     } catch (_) {
       if (mounted && !_closed) {
         setState(() {
@@ -1417,6 +1477,13 @@ class _PlayerScreenState extends State<PlayerScreen>
         _notice('无法切换全屏，请重试');
       }
     } finally {
+      if (identical(_rotationSettled, rotationWaiter)) {
+        _rotationSettled = null;
+        _rotationTarget = null;
+        _rotationSizeBefore = null;
+        _rotationWaitsForSize = false;
+      }
+      if (!rotationWaiter.isCompleted) rotationWaiter.complete();
       _rotating = false;
       if (mounted && !_closed) _scheduleSystemUi();
     }
@@ -1523,6 +1590,11 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   Future<void> _openPanel(PlayerMenuSection section) async {
     if (_panelOpen || _closed) return;
+    // 旋转请求返回不等于 MediaQuery 已完成重布局。若此时创建 Dialog，
+    // Android 的旋转快照可能把旧竖屏选集层一起带到新横屏窗口。
+    final rotation = _rotationSettled?.future;
+    if (rotation != null) await _waitForRotationToSettle(rotation);
+    if (!mounted || _closed || _rotating || _panelOpen) return;
     _interactions.cancel();
     setState(() => _panelOpen = true);
     final menuTheme = _showFullscreen ? AppTheme.dark : Theme.of(context);
@@ -1694,6 +1766,14 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   @override
   void dispose() {
+    final rotationWaiter = _rotationSettled;
+    _rotationSettled = null;
+    _rotationTarget = null;
+    _rotationSizeBefore = null;
+    _rotationWaitsForSize = false;
+    if (rotationWaiter != null && !rotationWaiter.isCompleted) {
+      rotationWaiter.complete();
+    }
     _setPhase(PlaybackPhase.closed);
     _screenAwake.disable();
     _routeAnimation?.removeStatusListener(_onRouteAnimationStatus);
