@@ -174,6 +174,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   Orientation? _rotationTarget;
   Size? _rotationSizeBefore;
   bool _rotationWaitsForSize = false;
+  // 旋转期间整屏盖黑：系统会先对当前窗口取快照，快照里不能留竖屏内容。
+  bool _rotationBlackout = false;
   bool _television = false;
   AppOrientationController? _orientationController;
   bool get _pictureInPictureVisible =>
@@ -1436,6 +1438,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     _interactions.cancel();
     setState(() {
       _fullscreen = fullscreen;
+      // 先盖黑再请求旋转：竖屏的选集网格会被系统快照转到横屏右侧。
+      _rotationBlackout = true;
     });
     if ((!_rotationWaitsForSize && targetOrientation == null) ||
         (targetOrientation != null &&
@@ -1445,11 +1449,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       _rotationWaitsForSize = false;
     }
     try {
-      // 系统旋转会先对当前窗口取快照；必须等不含选集面板的帧画完，
+      // 系统旋转会先对当前窗口取快照；必须等盖黑帧画完，
       // 否则旋转动画与残影里会带上旧的面板内容。
-      await WidgetsBinding.instance.endOfFrame;
-      if (!mounted || _closed) return;
-      // 光栅提交晚于 endOfFrame；再等一帧，避免快照仍是竖屏面板。
       await WidgetsBinding.instance.endOfFrame;
       if (!mounted || _closed) return;
       if (!_mobile && Platform.isWindows) {
@@ -1488,7 +1489,11 @@ class _PlayerScreenState extends State<PlayerScreen>
       // 旋转整体收尾后才兑现任务，等待方读到的 _rotating 一定是 false。
       if (identical(_rotationTask, rotationTask)) _rotationTask = null;
       if (!rotationTask.isCompleted) rotationTask.complete();
-      if (mounted && !_closed) _scheduleSystemUi();
+      if (mounted && !_closed) {
+        // 旋转与重布局都已收尾，撤掉盖黑层恢复画面。
+        setState(() => _rotationBlackout = false);
+        _scheduleSystemUi();
+      }
     }
   }
 
@@ -1902,38 +1907,55 @@ class _PlayerScreenState extends State<PlayerScreen>
           autofocus: !_television,
           canRequestFocus: !_television,
           skipTraversal: _television,
-          child: Scaffold(
-            resizeToAvoidBottomInset: false,
-            backgroundColor: fullscreen || pictureInPicture || _mobile
-                ? Colors.black
-                : theme.scaffoldBackgroundColor,
-            appBar: pictureInPicture || fullscreen || _mobile
-                ? null
-                : AppBar(
-                    title: Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    actions: [
-                      IconButton(
-                        tooltip: '旋转与全屏',
-                        onPressed: _rotate,
-                        icon: const Icon(Icons.screen_rotation_alt_rounded),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Scaffold(
+                resizeToAvoidBottomInset: false,
+                backgroundColor: fullscreen || pictureInPicture || _mobile
+                    ? Colors.black
+                    : theme.scaffoldBackgroundColor,
+                appBar: pictureInPicture || fullscreen || _mobile
+                    ? null
+                    : AppBar(
+                        title: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        actions: [
+                          IconButton(
+                            tooltip: '旋转与全屏',
+                            onPressed: _rotate,
+                            icon: const Icon(Icons.screen_rotation_alt_rounded),
+                          ),
+                        ],
                       ),
-                    ],
+                body: SafeArea(
+                  top: false,
+                  bottom: !fullscreen && !pictureInPicture,
+                  left: !fullscreen && !pictureInPicture,
+                  right: !fullscreen && !pictureInPicture,
+                  maintainBottomViewPadding: true,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) =>
+                        _playbackLayout(context, constraints, horizontalInsets),
                   ),
-            body: SafeArea(
-              top: false,
-              bottom: !fullscreen && !pictureInPicture,
-              left: !fullscreen && !pictureInPicture,
-              right: !fullscreen && !pictureInPicture,
-              maintainBottomViewPadding: true,
-              child: LayoutBuilder(
-                builder: (context, constraints) =>
-                    _playbackLayout(context, constraints, horizontalInsets),
+                ),
               ),
-            ),
+              // 旋转前盖住整个竖屏界面（视频、控制栏、选集网格），
+              // 系统对窗口取快照时拿到的就是纯黑一帧。只遮画面不挡事件：
+              // 旋转期间的选集点击仍要排队，等旋转结束后再打开。
+              if (_rotationBlackout)
+                const Positioned.fill(
+                  child: IgnorePointer(
+                    child: ColoredBox(
+                      key: ValueKey('player-rotation-blackout'),
+                      color: Colors.black,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),
@@ -1957,12 +1979,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     BoxConstraints constraints,
     EdgeInsets horizontalInsets,
   ) {
-    final video = _videoPane(context, horizontalInsets);
-    // 全屏必须把选集移出树。透明/黑占位仍会把竖屏网格图层留给
-    // 系统旋转快照，真机右侧就会露出 3/6/9 这种竖屏才有的残列。
-    if (_showFullscreen || _pictureInPictureVisible) {
-      return video;
-    }
     final desktop = constraints.maxWidth >= 840;
     // 并排侧栏只在桌面/平板宽屏出现：手机横屏一律是全屏，右侧不再挂侧栏。
     final sidePanel =
@@ -1972,19 +1988,37 @@ class _PlayerScreenState extends State<PlayerScreen>
       0.0,
       constraints.maxHeight * .64,
     );
-    final panel = sidePanel
-        ? SizedBox(width: desktop ? 312 : 210, child: _episodePanel())
-        : _mobile
-        ? _mobilePlaybackPanel(availableHeight: constraints.maxHeight)
-        : SizedBox(
-            height: constraints.maxHeight - videoHeight,
-            child: _episodePanel(),
-          );
+    final fullscreen = _showFullscreen || _pictureInPictureVisible;
+    // 全屏时不构建选集内容：只做透明和裁剪，横屏重布局期间仍会残留
+    // 面板像素。槽位尺寸保持不变，收起动画的节奏不受影响。
+    const black = ColoredBox(color: Colors.black);
+    final Widget panel;
+    if (sidePanel) {
+      panel = SizedBox(
+        width: desktop ? 312 : 210,
+        child: fullscreen ? black : _episodePanel(),
+      );
+    } else if (_mobile) {
+      panel = fullscreen
+          ? SizedBox(
+              height: constraints.maxHeight * _mobilePanelHeightFraction,
+              child: black,
+            )
+          : _mobilePlaybackPanel(availableHeight: constraints.maxHeight);
+    } else {
+      panel = SizedBox(
+        height: constraints.maxHeight - videoHeight,
+        child: fullscreen ? black : _episodePanel(),
+      );
+    }
     return PlayerViewportLayout(
-      fullscreen: false,
+      fullscreen: fullscreen,
       axis: sidePanel ? Axis.horizontal : Axis.vertical,
-      duration: const Duration(milliseconds: 220),
-      video: video,
+      // 手机旋转前直接完成全屏布局，避免原生合成层保存收起中间帧。
+      duration: _pictureInPictureVisible || (_mobile && fullscreen)
+          ? Duration.zero
+          : const Duration(milliseconds: 220),
+      video: _videoPane(context, horizontalInsets),
       panel: panel,
     );
   }

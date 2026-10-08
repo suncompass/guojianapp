@@ -4,7 +4,6 @@ import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/models.dart';
 import 'package:duanju_app/player_screen.dart';
 import 'package:duanju_app/player_controls.dart';
-import 'package:duanju_app/player_viewport_layout.dart';
 import 'package:duanju_app/player_episode_transition.dart';
 import 'package:duanju_app/app_layout.dart';
 import 'package:duanju_app/search_cache.dart';
@@ -579,22 +578,27 @@ void main() {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       final orientations = <List<String>>[];
       final panelsAtOrientationRequest = <bool>[];
+      final blackoutsAtOrientationRequest = <bool>[];
       final episodeKey = const ValueKey('play-episode-2');
+      final blackoutKey = const ValueKey('player-rotation-blackout');
       // 只有选集按钮真实存在过，才能用它的消失证明面板没有残留。
       bool panelMounted() {
         final found = find.byKey(episodeKey, skipOffstage: false);
         return found.evaluate().isNotEmpty;
       }
 
+      bool blackoutMounted() => find.byKey(blackoutKey).evaluate().isNotEmpty;
+
       final messenger = tester.binding.defaultBinaryMessenger;
       // Widget 测试没有真实系统旋转回包，显式完成平台调用以释放旋转锁。
       messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
         if (call.method == 'SystemChrome.setPreferredOrientations') {
-          // 系统在这一刻对窗口取快照，此时必须已经画过没有面板的帧。
-          // 只记录「树里有没有选集」，不在回包里量尺寸：回包落在帧边界上，
-          // 那时读 RenderBox 会抛异常并被 SystemChrome 的 await 吞掉，
+          // 系统在这一刻对窗口取快照，此时必须已经画过盖黑、无面板的帧。
+          // 只记录「树里有没有选集 / 盖黑层」，不在回包里量尺寸：回包落在帧
+          // 边界上，那时读 RenderBox 会抛异常并被 SystemChrome 的 await 吞掉，
           // 表现为列表空、断言只报 Bad state: No element。
           panelsAtOrientationRequest.add(panelMounted());
+          blackoutsAtOrientationRequest.add(blackoutMounted());
           orientations.add(List<String>.from(call.arguments as List));
         }
         return null;
@@ -626,14 +630,11 @@ void main() {
         // 只统计本次全屏请求发出的平台调用，排除挂载阶段可能出现的杂散回包。
         orientations.clear();
         panelsAtOrientationRequest.clear();
+        blackoutsAtOrientationRequest.clear();
         controls.onFullscreen();
         await tester.pump();
         expect(panelMounted(), isFalse, reason: '进入全屏的首帧不能保留选集内容');
-        expect(
-          find.byType(PlayerViewportLayout),
-          findsNothing,
-          reason: '全屏不能把选集槽位留在树里，否则旋转快照会带上竖屏网格',
-        );
+        expect(blackoutMounted(), isTrue, reason: '进入全屏的首帧必须已经盖黑');
         await tester.pump(const Duration(milliseconds: 100));
         await tester.pump();
         expect(tester.getSize(surface).height, greaterThan(initialHeight));
@@ -643,6 +644,11 @@ void main() {
           panelsAtOrientationRequest.first,
           isFalse,
           reason: '系统旋转前必须先绘制不含选集面板的帧',
+        );
+        expect(
+          blackoutsAtOrientationRequest.first,
+          isTrue,
+          reason: '系统旋转时快照必须已经是纯黑一帧',
         );
         // 尺寸在帧外量：手机全屏收起为 Duration.zero，首帧即铺满整页，
         // 若旋转前没画出无面板帧，这里仍会是收起中间尺寸。
@@ -657,7 +663,7 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 240));
         expect(panelMounted(), isFalse, reason: '横屏稳定后也不能挂载选集内容');
-        expect(find.byType(PlayerViewportLayout), findsNothing);
+        expect(blackoutMounted(), isFalse, reason: '旋转收尾后必须撤掉盖黑层');
         expect(tester.widget<PlayerControls>(controlFinder).fullscreen, isTrue);
         expect(orientations, hasLength(1));
         expect(orientations.single, hasLength(2));
@@ -683,6 +689,7 @@ void main() {
         expect(tester.element(surface), same(surfaceElement));
         expect(tester.widget<AnimatedOpacity>(chrome).opacity, 0);
         expect(tester.getSize(surface).height, closeTo(initialHeight, .01));
+        expect(blackoutMounted(), isFalse, reason: '退出全屏后不能留着盖黑层');
         expect(player.opened, hasLength(opened));
         expect(player.state.position, position);
         expect(player.state.playing, isTrue);
@@ -832,13 +839,12 @@ void main() {
 
       final controlFinder = find.byType(PlayerControls);
       expect(tester.widget<PlayerControls>(controlFinder).fullscreen, isTrue);
-      expect(find.byType(PlayerViewportLayout), findsNothing);
       final surface = tester.getRect(
         find.byKey(const ValueKey('player-gesture-surface')),
       );
       expect(surface.width, 844, reason: '横屏视频区必须占满整屏宽度');
       expect(
-        find.byKey(const ValueKey('play-episode-2'), skipOffstage: false),
+        find.byKey(const ValueKey('play-episode-2')),
         findsNothing,
         reason: '横屏不再自动挂出选集侧栏',
       );
