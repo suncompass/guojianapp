@@ -1391,6 +1391,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       // 系统旋转会先对当前窗口取快照；必须等不含选集面板的帧画完，
       // 否则旋转动画与残影里会带上旧的面板内容。
       await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || _closed) return;
       if (!_mobile && Platform.isWindows) {
         await windowManager.setFullScreen(fullscreen);
       } else if (_mobile) {
@@ -1833,8 +1834,8 @@ class _PlayerScreenState extends State<PlayerScreen>
             body: SafeArea(
               top: false,
               bottom: !fullscreen && !pictureInPicture,
-              left: !pictureInPicture,
-              right: !pictureInPicture,
+              left: !fullscreen && !pictureInPicture,
+              right: !fullscreen && !pictureInPicture,
               maintainBottomViewPadding: true,
               child: LayoutBuilder(
                 builder: (context, constraints) =>
@@ -1847,10 +1848,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  /// 沉浸全屏后系统栏会瞬时回到屏幕侧边，而 SafeArea 只避让当前可见的系统栏；
-  /// 这里给出两者的差值，交给控制层再让开一次。
+  /// 全屏视频铺满屏幕，控制栏单独避让稳定内衬；普通布局补足 SafeArea 的差值。
   EdgeInsets _horizontalInsetsOf(BuildContext context) {
-    final padding = MediaQuery.paddingOf(context);
+    final padding = _showFullscreen || _pictureInPictureVisible
+        ? EdgeInsets.zero
+        : MediaQuery.paddingOf(context);
     final viewPadding = MediaQuery.viewPaddingOf(context);
     return EdgeInsets.only(
       left: (viewPadding.left - padding.left).clamp(0.0, double.infinity),
@@ -1896,7 +1898,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     return PlayerViewportLayout(
       fullscreen: fullscreen,
       axis: sidePanel ? Axis.horizontal : Axis.vertical,
-      duration: _pictureInPictureVisible
+      // 手机旋转前直接完成全屏布局，避免原生合成层保存收起中间帧。
+      duration: _pictureInPictureVisible || (_mobile && fullscreen)
           ? Duration.zero
           : const Duration(milliseconds: 220),
       video: _videoPane(context, horizontalInsets),

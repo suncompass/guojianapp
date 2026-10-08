@@ -465,7 +465,7 @@ void main() {
           await controls.interactions.pendingRates;
           expect(player.state.rate, 2);
           expect(player.state.position, position, reason: '长按任何区域都不能跳进度');
-          expect(find.text('2 倍速 · 松开恢复'), findsOneWidget);
+          expect(find.text('2 倍速'), findsOneWidget);
           expect(tester.widget<AnimatedOpacity>(chrome).opacity, 0);
           expect(find.byTooltip('暂停播放').hitTestable(), findsNothing);
           // 缓冲事件也不能在长按期间重新唤醒控制栏。
@@ -479,6 +479,10 @@ void main() {
           await controls.interactions.pendingRates;
           expect(player.state.rate, 1);
           expect(player.state.playing, isTrue);
+          expect(
+            find.byKey(const ValueKey('player-gesture-feedback')),
+            findsNothing,
+          );
           expect(controls.interactions.suppressTap, isTrue);
           expect(tester.widget<AnimatedOpacity>(chrome).opacity, 0);
           await tester.pump(const Duration(milliseconds: 1300));
@@ -499,14 +503,20 @@ void main() {
     });
   }
 
-  testWidgets('hold feedback paints no background over the picture', (
+  testWidgets('hold feedback stays faint at the top of the picture', (
     tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     try {
       final repository = RouteRepository();
       final player = ScriptedPlayer();
-      await mount(tester, repository, player, size: const Size(390, 844));
+      await mount(
+        tester,
+        repository,
+        player,
+        size: const Size(390, 844),
+        padding: const FakeViewPadding(top: 32),
+      );
       final surface = tester.getRect(
         find.byKey(const ValueKey('player-gesture-surface')),
       );
@@ -519,7 +529,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       await controls.interactions.pendingRates;
       expect(player.state.rate, 2);
-      expect(find.text('2 倍速 · 松开恢复'), findsOneWidget);
+      expect(find.text('2 倍速'), findsOneWidget);
       final feedback = find.byKey(const ValueKey('player-gesture-feedback'));
       expect(feedback, findsOneWidget);
       final painted = <Widget>[];
@@ -534,14 +544,23 @@ void main() {
         ...painted.whereType<Container>(),
       ];
       expect(boxes, isEmpty, reason: '长按倍速提示不能带底色，否则会盖住画面');
-      expect(
-        tester.widget<Text>(feedback).style?.shadows,
-        isNotEmpty,
-        reason: '去掉底色后必须靠阴影保证可读',
-      );
+      final text = tester.widget<Text>(feedback);
+      expect(text.style?.fontSize, 12);
+      expect(text.style?.fontWeight, FontWeight.w400);
+      expect(text.style?.color?.a, closeTo(.35, .01));
+      expect(text.style?.shadows, isNull);
+      expect(tester.getRect(feedback).top, closeTo(surface.top + 44, .01));
+      expect(tester.getRect(feedback).center.dx, closeTo(surface.center.dx, .01));
       await gesture.up();
       await tester.pump();
       await controls.interactions.pendingRates;
+      expect(feedback, findsNothing);
+      expect(player.state.rate, 1);
+      controls.interactions.hint('倍速调整失败，请重试');
+      await tester.pump();
+      expect(tester.widget<Text>(feedback).data, '倍速调整失败，请重试');
+      expect(tester.widget<Text>(feedback).style?.fontSize, 16);
+      expect(tester.widget<Text>(feedback).style?.color, Colors.white);
       await unmount(tester, player);
     } finally {
       debugDefaultTargetPlatformOverride = null;
@@ -555,6 +574,7 @@ void main() {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       final orientations = <List<String>>[];
       final panelsAtOrientationRequest = <bool>[];
+      final viewportsAtOrientationRequest = <Size>[];
       final episodeKey = const ValueKey('play-episode-2');
       // 只有选集按钮真实存在过，才能用它的消失证明面板没有残留。
       bool panelMounted() {
@@ -568,6 +588,10 @@ void main() {
         if (call.method == 'SystemChrome.setPreferredOrientations') {
           // 系统在这一刻对窗口取快照，此时必须已经画过没有面板的帧。
           panelsAtOrientationRequest.add(panelMounted());
+          final surface = find.byKey(const ValueKey('player-gesture-surface'));
+          if (surface.evaluate().isNotEmpty) {
+            viewportsAtOrientationRequest.add(tester.getSize(surface));
+          }
           orientations.add(List<String>.from(call.arguments as List));
         }
         return null;
@@ -608,6 +632,11 @@ void main() {
           panelsAtOrientationRequest.first,
           isFalse,
           reason: '系统旋转前必须先绘制不含选集面板的帧',
+        );
+        expect(
+          viewportsAtOrientationRequest.first,
+          const Size(390, 844),
+          reason: '系统旋转前视频区必须已占满页面，不能保存面板收起中间帧',
         );
         if (!portraitVideo) {
           tester.view.physicalSize = const Size(844, 390);
@@ -701,6 +730,15 @@ void main() {
         lessThanOrEqualTo(pane.right - 48),
         reason: '总时长不能被右侧系统栏吃掉',
       );
+      tester.view.padding = const FakeViewPadding(right: 48);
+      await tester.pump();
+      expect(
+        tester.getRect(find.byKey(const ValueKey('player-gesture-surface'))),
+        pane,
+        reason: '系统栏重新出现也不能压缩全屏视频区',
+      );
+      expect(tester.getRect(episodes).right, lessThanOrEqualTo(pane.right - 48));
+      expect(tester.getRect(duration).right, lessThanOrEqualTo(pane.right - 48));
       await unmount(tester, player);
     } finally {
       debugDefaultTargetPlatformOverride = null;

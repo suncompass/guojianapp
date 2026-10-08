@@ -1107,25 +1107,33 @@ class _PlayerControlsState extends State<PlayerControls> {
     builder: (context, _) {
       final feedback = widget.interactions.feedback;
       if (feedback.isEmpty) return const SizedBox.shrink();
+      final boosting = widget.interactions.boosting && feedback == '2 倍速';
       return IgnorePointer(
         child: Align(
-          alignment: const Alignment(0, -.5),
-          // 手势提示不画底色，长按倍速时不能盖住画面，靠描边阴影保证可读。
+          alignment: boosting ? Alignment.topCenter : const Alignment(0, -.5),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: boosting
+                ? EdgeInsets.only(
+                    top: MediaQuery.viewPaddingOf(context).top + 12,
+                    left: 16,
+                    right: 16,
+                  )
+                : const EdgeInsets.all(16),
             child: Text(
               feedback,
               key: const ValueKey('player-gesture-feedback'),
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
+              style: TextStyle(
+                color: boosting ? const Color(0x59FFFFFF) : Colors.white,
+                fontSize: boosting ? 12 : 16,
+                fontWeight: boosting ? FontWeight.w400 : FontWeight.w600,
                 height: 1.2,
-                shadows: [
-                  Shadow(color: Colors.black, blurRadius: 8),
-                  Shadow(color: Colors.black, blurRadius: 3),
-                ],
+                shadows: boosting
+                    ? null
+                    : const [
+                        Shadow(color: Colors.black, blurRadius: 8),
+                        Shadow(color: Colors.black, blurRadius: 3),
+                      ],
               ),
             ),
           ),

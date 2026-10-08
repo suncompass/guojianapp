@@ -65,7 +65,7 @@ class PlayerInteractions extends ChangeNotifier {
     }
     if (!persistent && message.isNotEmpty) {
       _hintTimer = Timer(const Duration(milliseconds: 1200), () {
-        hint(_boosting ? '2 倍速 · 松开恢复' : '', persistent: true);
+        hint(_boosting ? '2 倍速' : '', persistent: true);
       });
     }
   }
@@ -98,7 +98,7 @@ class PlayerInteractions extends ChangeNotifier {
       _boosting = true;
       _held = true;
       unawaited(_setRate(2));
-      hint('2 倍速 · 松开恢复', persistent: true);
+      hint('2 倍速', persistent: true);
     });
   }
 
@@ -111,7 +111,7 @@ class PlayerInteractions extends ChangeNotifier {
     _boosting = false;
     if (boosted) {
       unawaited(_setRate(baseSpeed()));
-      if (!silent) hint('恢复 ${baseSpeed()} 倍速');
+      if (!silent) hint('');
     } else if (tap && wasKeyboard) {
       seek(5);
     }
