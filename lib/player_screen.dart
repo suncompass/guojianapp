@@ -1452,6 +1452,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       // 否则旋转动画与残影里会带上旧的面板内容。
       await WidgetsBinding.instance.endOfFrame;
       if (!mounted || _closed) return;
+      // 光栅提交晚于 endOfFrame：再等一帧，避免快照仍是旋转前的画面。
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || _closed) return;
       if (!_mobile && Platform.isWindows) {
         await windowManager.setFullScreen(fullscreen);
       } else if (_mobile) {

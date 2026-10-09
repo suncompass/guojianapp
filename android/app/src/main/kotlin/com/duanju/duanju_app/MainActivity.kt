@@ -22,6 +22,7 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.util.Rational
 import android.view.InputDevice
+import android.view.WindowManager
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
@@ -64,6 +65,14 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun setRequestedOrientation(requestedOrientation: Int) {
+        // 旋转动画会把旋转前那一帧（竖屏的控制栏与面板头部）转 90° 贴在屏幕上，
+        // 面板已经不进树也照样出现。这里改成直接跳变，不让系统做旋转过渡。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+            val attributes = window.attributes
+            attributes.rotationAnimation =
+                WindowManager.LayoutParams.ROTATION_ANIMATION_JUMPCUT
+            window.attributes = attributes
+        }
         super.setRequestedOrientation(
             if (televisionMode) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else requestedOrientation
         )
