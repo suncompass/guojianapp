@@ -307,7 +307,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     final television =
         context.getInheritedWidgetOfExactType<AppLayout>()?.television ?? false;
     _surfaceOutput =
-        androidSurfaceViewSupported && television && widget.videoBuilder == null;
+        androidSurfaceViewSupported &&
+        television &&
+        widget.videoBuilder == null;
     _video = widget.videoBuilder == null && !_surfaceOutput
         ? VideoController(
             _player,

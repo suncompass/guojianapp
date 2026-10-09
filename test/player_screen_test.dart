@@ -746,7 +746,10 @@ void main() {
           expect(tester.widget<PlayerControls>(controls).fullscreen, isTrue);
           expect(tester.getSize(surface), const Size(844, 390));
           expect(panel, findsNothing, reason: '物理横屏后选集不能残留在树中');
-          expect(find.byKey(const ValueKey('player-panel-toggle')), findsNothing);
+          expect(
+            find.byKey(const ValueKey('player-panel-toggle')),
+            findsNothing,
+          );
           expect(
             find.byKey(const ValueKey('player-rotation-blackout')),
             findsNothing,
