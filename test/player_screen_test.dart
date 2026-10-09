@@ -589,6 +589,14 @@ void main() {
 
       bool blackoutMounted() => find.byKey(blackoutKey).evaluate().isNotEmpty;
 
+      // 盖黑层要等整次旋转收尾（_waitForRotationToSettle 的补帧 + 一次
+      // setState 重绘）才撤，帧数随平台回包浮动，这里等到它消失再断言。
+      Future<void> settleBlackout() async {
+        for (var frame = 0; frame < 8 && blackoutMounted(); frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+      }
+
       final messenger = tester.binding.defaultBinaryMessenger;
       // Widget 测试没有真实系统旋转回包，显式完成平台调用以释放旋转锁。
       messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
@@ -663,6 +671,7 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 240));
         expect(panelMounted(), isFalse, reason: '横屏稳定后也不能挂载选集内容');
+        await settleBlackout();
         expect(blackoutMounted(), isFalse, reason: '旋转收尾后必须撤掉盖黑层');
         expect(tester.widget<PlayerControls>(controlFinder).fullscreen, isTrue);
         expect(orientations, hasLength(1));
@@ -689,6 +698,7 @@ void main() {
         expect(tester.element(surface), same(surfaceElement));
         expect(tester.widget<AnimatedOpacity>(chrome).opacity, 0);
         expect(tester.getSize(surface).height, closeTo(initialHeight, .01));
+        await settleBlackout();
         expect(blackoutMounted(), isFalse, reason: '退出全屏后不能留着盖黑层');
         expect(player.opened, hasLength(opened));
         expect(player.state.position, position);
