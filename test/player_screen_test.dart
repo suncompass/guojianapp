@@ -651,8 +651,8 @@ void main() {
       final feedback = find.byKey(const ValueKey('player-gesture-feedback'));
       final pill = find.byKey(const ValueKey('player-hold-speed-feedback'));
       expect(feedback, findsOneWidget);
-      final decoration = tester.widget<DecoratedBox>(pill).decoration
-          as BoxDecoration;
+      final decoration =
+          tester.widget<DecoratedBox>(pill).decoration as BoxDecoration;
       expect(decoration.borderRadius, BorderRadius.circular(25));
       expect(decoration.color, const Color(0x38D9D9D9));
       expect(decoration.color?.a, closeTo(.22, .01));
