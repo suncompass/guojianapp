@@ -58,6 +58,35 @@ void main() {
     return store;
   }
 
+  test('hold speed validates and preserves legacy playback settings', () {
+    final legacy = PlaybackPreferences.fromJson({'speed': 1.5, 'quality': 720});
+    expect(legacy.holdSpeed, 2);
+    for (final speed in [.5, 1.35, 2.0, 2.75, 5.0]) {
+      final preferences = legacy.copyWith(holdSpeed: speed);
+      final restored = PlaybackPreferences.fromJson(preferences.toJson());
+      expect(restored.holdSpeed, speed);
+      expect(restored.speed, 1.5);
+      expect(restored.quality, 720);
+      expect(restored.copyWith(speed: 3).holdSpeed, speed);
+    }
+    for (final speed in [
+      -1.0,
+      0.0,
+      .49,
+      5.01,
+      double.nan,
+      double.infinity,
+      double.negativeInfinity,
+    ]) {
+      expect(
+        () => PlaybackPreferences.fromJson({'holdSpeed': speed}),
+        throwsFormatException,
+      );
+    }
+    expect(formatPlaybackSpeed(2), '2');
+    expect(formatPlaybackSpeed(2.75), '2.75');
+  });
+
   for (final failure in ['false', 'throw', 'after']) {
     test(
       'failed $failure writes keep favorites, preferences and progress after restart',
@@ -82,6 +111,7 @@ void main() {
           () => store.setPlaybackPreferences(
             const PlaybackPreferences(
               speed: 2,
+              holdSpeed: 2.75,
               quality: 720,
               autoAdvance: false,
             ),
@@ -93,7 +123,9 @@ void main() {
           expect(store.watched(drama.id)?.position, 15);
           expect(store.themeMode, 'system');
           expect(store.playbackPreferences.speed, 1);
+          expect(store.playbackPreferences.holdSpeed, 2);
           final restored = await restart(platform);
+          expect(restored.playbackPreferences.holdSpeed, 2);
           expect(restored.favorites.single.id, drama.id);
           expect(restored.watched(drama.id)?.position, 15);
           expect(restored.themeMode, 'system');
@@ -141,6 +173,7 @@ void main() {
       ];
       library['playback'] = const PlaybackPreferences(
         speed: 1.5,
+        holdSpeed: 2.75,
         quality: 1080,
         autoAdvance: false,
       ).toJson();
@@ -190,7 +223,12 @@ void main() {
         pin: 'abcdef12',
       );
       await store.setPlaybackPreferences(
-        const PlaybackPreferences(speed: 1.5, quality: 720, autoAdvance: false),
+        const PlaybackPreferences(
+          speed: 1.5,
+          holdSpeed: 2.75,
+          quality: 720,
+          autoAdvance: false,
+        ),
       );
       await store.saveProfile(
         name: '访客',
@@ -200,14 +238,21 @@ void main() {
       final visitor = store.profiles.firstWhere((profile) => !profile.admin);
       await store.switchProfile(visitor.id);
       expect(store.playbackPreferences.speed, 1);
-      await store.setPlaybackPreferences(const PlaybackPreferences(speed: .75));
+      expect(store.playbackPreferences.holdSpeed, 2);
+      await store.setPlaybackPreferences(
+        const PlaybackPreferences(speed: .75, holdSpeed: 4),
+      );
       await store.switchProfile('default', pin: 'abcdef12');
       expect(store.playbackPreferences.speed, 1.5);
+      expect(store.playbackPreferences.holdSpeed, 2.75);
       final restored = await restart(platform);
       expect(restored.locked, isTrue);
       await restored.switchProfile('default', pin: 'abcdef12');
       expect(restored.favorites.length, 2);
       expect(restored.playbackPreferences.autoAdvance, isFalse);
+      expect(restored.playbackPreferences.holdSpeed, 2.75);
+      await restored.switchProfile(visitor.id);
+      expect(restored.playbackPreferences.holdSpeed, 4);
     },
   );
 

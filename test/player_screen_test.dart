@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/models.dart';
+import 'package:duanju_app/playback_preferences.dart';
 import 'package:duanju_app/player_screen.dart';
 import 'package:duanju_app/player_controls.dart';
 import 'package:duanju_app/player_episode_transition.dart';
@@ -126,6 +127,7 @@ void main() {
     FakeViewPadding? padding,
     FakeViewPadding? systemPadding,
     ThemeData? theme,
+    PlaybackPreferences? preferences,
     VoidCallback? onVideoBuild,
   }) async {
     SharedPreferences.setMockInitialValues({});
@@ -140,6 +142,7 @@ void main() {
     // 沉浸全屏：系统栏已隐藏，但稳定内衬仍报告系统栏占位。
     if (systemPadding != null) tester.view.viewPadding = systemPadding;
     final store = LocalStore(await SharedPreferences.getInstance());
+    if (preferences != null) await store.setPlaybackPreferences(preferences);
     final detail = await repository.detail(FixtureRepository.free);
     await tester.pumpWidget(
       MaterialApp(
@@ -181,7 +184,7 @@ void main() {
       await mount(tester, repository, player);
       await tester.tap(find.byKey(const ValueKey('player-speed')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('1.5x').last);
+      await tester.tap(find.byKey(const ValueKey('menu-speed-1.5')));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('关闭菜单'));
       await tester.pumpAndSettle();
@@ -433,6 +436,119 @@ void main() {
     );
   }
 
+  for (final brightness in Brightness.values) {
+    testWidgets('fullscreen title is legible in $brightness', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      try {
+        final repository = RouteRepository();
+        final player = ScriptedPlayer();
+        await mount(
+          tester,
+          repository,
+          player,
+          size: const Size(844, 390),
+          theme: ThemeData(brightness: brightness),
+        );
+        final title = tester.widget<Text>(
+          find.byKey(const ValueKey('player-video-title')),
+        );
+        expect(title.data, contains(FixtureRepository.free.title));
+        expect(title.style?.color, Colors.white);
+        expect(title.style?.fontSize, 16);
+        expect(title.style?.fontWeight, FontWeight.w600);
+        expect(title.style?.shadows, isNotEmpty);
+        expect(title.maxLines, 1);
+        expect(title.overflow, TextOverflow.ellipsis);
+        await unmount(tester, player);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+  }
+
+  testWidgets('menu saves a custom hold rate without changing normal speed', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      final repository = RouteRepository();
+      final player = ScriptedPlayer();
+      await mount(
+        tester,
+        repository,
+        player,
+        size: const Size(390, 844),
+        preferences: const PlaybackPreferences(speed: 1.25),
+      );
+      final screen = tester.widget<PlayerScreen>(find.byType(PlayerScreen));
+      final store = screen.store;
+      await tester.tap(find.byKey(const ValueKey('player-speed')));
+      await tester.pumpAndSettle();
+      final input = find.byKey(const ValueKey('menu-hold-speed-input'));
+      final save = find.byKey(const ValueKey('menu-hold-speed-save'));
+      for (final value in ['', 'NaN', '0.49', '5.01']) {
+        await tester.ensureVisible(input);
+        await tester.enterText(input, value);
+        await tester.ensureVisible(save);
+        await tester.tap(save);
+        await tester.pumpAndSettle();
+        expect(find.text('请输入 0.5–5 之间的倍数'), findsOneWidget);
+        expect(store.playbackPreferences.holdSpeed, 2);
+        expect(player.state.rate, 1.25);
+      }
+      await tester.ensureVisible(input);
+      await tester.enterText(input, '2,75');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(store.playbackPreferences.holdSpeed, 2.75);
+      expect(store.playbackPreferences.speed, 1.25);
+      expect(player.state.rate, 1.25);
+      expect(tester.widget<TextField>(input).controller?.text, '2.75');
+      expect(find.text('当前 2.75x · 松开恢复播放倍速'), findsOneWidget);
+
+      final normalSpeed = find.byKey(const ValueKey('menu-speed-1.5'));
+      await tester.ensureVisible(normalSpeed);
+      await tester.tap(normalSpeed);
+      await tester.pumpAndSettle();
+      expect(store.playbackPreferences.holdSpeed, 2.75);
+      expect(player.state.rate, 1.5);
+      await tester.tap(find.byTooltip('关闭菜单'));
+      await tester.pumpAndSettle();
+
+      final controls = tester.widget<PlayerControls>(
+        find.byType(PlayerControls),
+      );
+      final surface = tester.getRect(
+        find.byKey(const ValueKey('player-gesture-surface')),
+      );
+      final position = player.state.position;
+      final gesture = await tester.startGesture(
+        surface.topLeft + Offset(surface.width * .5, surface.height * .3),
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+      await controls.interactions.pendingRates;
+      expect(player.state.rate, 2.75);
+      await gesture.up();
+      await tester.pump();
+      await controls.interactions.pendingRates;
+      expect(player.state.rate, 1.5);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump(const Duration(milliseconds: 400));
+      await controls.interactions.pendingRates;
+      expect(player.state.rate, 2.75);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+      await controls.interactions.pendingRates;
+      expect(player.state.rate, 1.5);
+      expect(player.state.position, position);
+      expect(find.text('2.75 倍速'), findsNothing);
+      await unmount(tester, player);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
   for (final initiallyVisible in [true, false]) {
     testWidgets('hold hides controls from visible=$initiallyVisible', (
       tester,
@@ -504,7 +620,7 @@ void main() {
     });
   }
 
-  testWidgets('hold feedback stays faint at the top of the picture', (
+  testWidgets('custom hold feedback uses a translucent rounded pill', (
     tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
@@ -517,6 +633,7 @@ void main() {
         player,
         size: const Size(390, 844),
         padding: const FakeViewPadding(top: 32),
+        preferences: const PlaybackPreferences(speed: 1.25, holdSpeed: 2.75),
       );
       final surface = tester.getRect(
         find.byKey(const ValueKey('player-gesture-surface')),
@@ -529,39 +646,45 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 400));
       await controls.interactions.pendingRates;
-      expect(player.state.rate, 2);
-      expect(find.text('2 倍速'), findsOneWidget);
+      expect(player.state.rate, 2.75);
+      expect(find.text('2.75 倍速'), findsOneWidget);
       final feedback = find.byKey(const ValueKey('player-gesture-feedback'));
+      final pill = find.byKey(const ValueKey('player-hold-speed-feedback'));
       expect(feedback, findsOneWidget);
-      final painted = <Widget>[];
-      tester.element(feedback).visitAncestorElements((element) {
-        if (element.widget is Align) return false;
-        painted.add(element.widget);
-        return true;
-      });
-      final boxes = [
-        ...painted.whereType<DecoratedBox>(),
-        ...painted.whereType<ColoredBox>(),
-        ...painted.whereType<Container>(),
-      ];
-      expect(boxes, isEmpty, reason: '长按倍速提示不能带底色，否则会盖住画面');
+      final decoration = tester.widget<DecoratedBox>(pill).decoration
+          as BoxDecoration;
+      expect(decoration.borderRadius, BorderRadius.circular(25));
+      expect(decoration.color, const Color(0x38D9D9D9));
+      expect(decoration.color?.a, closeTo(.22, .01));
       final text = tester.widget<Text>(feedback);
       expect(text.style?.fontSize, 12);
-      expect(text.style?.fontWeight, FontWeight.w400);
-      expect(text.style?.color?.a, closeTo(.35, .01));
-      expect(text.style?.shadows, isNull);
-      expect(tester.getRect(feedback).top, closeTo(surface.top + 44, .01));
+      expect(text.style?.fontWeight, FontWeight.w500);
+      expect(text.style?.color?.a, closeTo(.9, .01));
+      expect(tester.getRect(pill).top, closeTo(surface.top + 44, .01));
+      expect(
+        tester.getRect(feedback).top,
+        closeTo(tester.getRect(pill).top + 7, .01),
+      );
       expect(
         tester.getRect(feedback).center.dx,
         closeTo(surface.center.dx, .01),
       );
+      controls.interactions.hint('音量 60%');
+      await tester.pump();
+      expect(pill, findsNothing);
+      expect(tester.widget<Text>(feedback).style?.fontSize, 16);
+      await tester.pump(const Duration(milliseconds: 1200));
+      expect(find.text('2.75 倍速'), findsOneWidget);
+      expect(pill, findsOneWidget);
       await gesture.up();
       await tester.pump();
       await controls.interactions.pendingRates;
       expect(feedback, findsNothing);
-      expect(player.state.rate, 1);
+      expect(pill, findsNothing);
+      expect(player.state.rate, 1.25);
       controls.interactions.hint('倍速调整失败，请重试');
       await tester.pump();
+      expect(pill, findsNothing);
       expect(tester.widget<Text>(feedback).data, '倍速调整失败，请重试');
       expect(tester.widget<Text>(feedback).style?.fontSize, 16);
       expect(tester.widget<Text>(feedback).style?.color, Colors.white);

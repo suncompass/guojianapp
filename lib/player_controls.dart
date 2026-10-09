@@ -443,10 +443,27 @@ class _PlayerControlsState extends State<PlayerControls> {
             ),
             if (!compact)
               Expanded(
-                child: Text(
-                  widget.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Text(
+                    widget.title,
+                    key: const ValueKey('player-video-title'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black87,
+                          offset: Offset(0, 1),
+                          blurRadius: 6,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               )
             else
@@ -1107,7 +1124,26 @@ class _PlayerControlsState extends State<PlayerControls> {
     builder: (context, _) {
       final feedback = widget.interactions.feedback;
       if (feedback.isEmpty) return const SizedBox.shrink();
-      final boosting = widget.interactions.boosting && feedback == '2 倍速';
+      final boosting =
+          widget.interactions.boosting &&
+          feedback == widget.interactions.boostFeedback;
+      final text = Text(
+        feedback,
+        key: const ValueKey('player-gesture-feedback'),
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: boosting ? const Color(0xE6FFFFFF) : Colors.white,
+          fontSize: boosting ? 12 : 16,
+          fontWeight: boosting ? FontWeight.w500 : FontWeight.w600,
+          height: 1.2,
+          shadows: boosting
+              ? const [Shadow(color: Colors.black54, blurRadius: 3)]
+              : const [
+                  Shadow(color: Colors.black, blurRadius: 8),
+                  Shadow(color: Colors.black, blurRadius: 3),
+                ],
+        ),
+      );
       return IgnorePointer(
         child: Align(
           alignment: boosting ? Alignment.topCenter : const Alignment(0, -.5),
@@ -1119,23 +1155,22 @@ class _PlayerControlsState extends State<PlayerControls> {
                     right: 16,
                   )
                 : const EdgeInsets.all(16),
-            child: Text(
-              feedback,
-              key: const ValueKey('player-gesture-feedback'),
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: boosting ? const Color(0x59FFFFFF) : Colors.white,
-                fontSize: boosting ? 12 : 16,
-                fontWeight: boosting ? FontWeight.w400 : FontWeight.w600,
-                height: 1.2,
-                shadows: boosting
-                    ? null
-                    : const [
-                        Shadow(color: Colors.black, blurRadius: 8),
-                        Shadow(color: Colors.black, blurRadius: 3),
-                      ],
-              ),
-            ),
+            child: boosting
+                ? DecoratedBox(
+                    key: const ValueKey('player-hold-speed-feedback'),
+                    decoration: BoxDecoration(
+                      color: const Color(0x38D9D9D9),
+                      borderRadius: BorderRadius.circular(25),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 7,
+                      ),
+                      child: text,
+                    ),
+                  )
+                : text,
           ),
         ),
       );

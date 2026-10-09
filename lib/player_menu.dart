@@ -59,6 +59,47 @@ class PlayerMenu extends StatefulWidget {
 class _PlayerMenuState extends State<PlayerMenu> {
   bool _busy = false;
   String? _error;
+  String? _holdSpeedError;
+  late final _holdSpeedInput = TextEditingController(
+    text: formatPlaybackSpeed(widget.preferences.holdSpeed),
+  );
+
+  @override
+  void didUpdateWidget(covariant PlayerMenu oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.preferences.holdSpeed != widget.preferences.holdSpeed) {
+      _holdSpeedInput.text = formatPlaybackSpeed(widget.preferences.holdSpeed);
+      _holdSpeedError = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _holdSpeedInput.dispose();
+    super.dispose();
+  }
+
+  Future<void> _setHoldSpeed(double speed) async {
+    FocusScope.of(context).unfocus();
+    await _run(() async {
+      await widget.onPreferences(widget.preferences.copyWith(holdSpeed: speed));
+      if (!mounted) return;
+      _holdSpeedInput.text = formatPlaybackSpeed(speed);
+      _holdSpeedError = null;
+    });
+  }
+
+  Future<void> _saveCustomHoldSpeed() async {
+    if (_busy) return;
+    final speed = double.tryParse(
+      _holdSpeedInput.text.trim().replaceAll(',', '.'),
+    );
+    if (speed == null || !isValidHoldSpeed(speed)) {
+      setState(() => _holdSpeedError = '请输入 0.5–5 之间的倍数');
+      return;
+    }
+    await _setHoldSpeed(speed);
+  }
 
   Future<void> _run(Future<void> Function() action) async {
     if (_busy) return;
@@ -205,6 +246,67 @@ class _PlayerMenuState extends State<PlayerMenu> {
                 ),
             ],
           ),
+          const SizedBox(height: 24),
+          const Text('长按倍速'),
+          const SizedBox(height: 8),
+          Text(
+            '当前 ${formatPlaybackSpeed(preferences.holdSpeed)}x · 松开恢复播放倍速',
+            style: helperStyle,
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final speed in holdSpeeds)
+                ChoiceChip(
+                  key: ValueKey('menu-hold-speed-$speed'),
+                  label: Text('${formatPlaybackSpeed(speed)}x'),
+                  selected: speed == preferences.holdSpeed,
+                  onSelected: _busy ? null : (_) => _setHoldSpeed(speed),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: TextField(
+                  key: const ValueKey('menu-hold-speed-input'),
+                  controller: _holdSpeedInput,
+                  enabled: !_busy,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  textInputAction: TextInputAction.done,
+                  decoration: InputDecoration(
+                    labelText: '自定义倍数',
+                    suffixText: 'x',
+                    helperText: '范围 0.5–5 倍',
+                    errorText: _holdSpeedError,
+                    errorMaxLines: 2,
+                    border: const OutlineInputBorder(),
+                  ),
+                  onChanged: (_) {
+                    if (_holdSpeedError != null) {
+                      setState(() => _holdSpeedError = null);
+                    }
+                  },
+                  onSubmitted: (_) => _saveCustomHoldSpeed(),
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                height: 56,
+                child: FilledButton.tonal(
+                  key: const ValueKey('menu-hold-speed-save'),
+                  onPressed: _busy ? null : _saveCustomHoldSpeed,
+                  child: const Text('保存'),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 20),
         ],
         if (all || widget.section == PlayerMenuSection.quality) ...[
@@ -328,8 +430,8 @@ class _PlayerMenuState extends State<PlayerMenu> {
           const SizedBox(height: 20),
           Text(
             widget.mobile
-                ? '上下滑切集；长按画面临时 2 倍速，松开恢复。竖屏轻点暂停，横屏轻点显示控制；双击播放或暂停。'
-                : '空格：播放 / 暂停\n左右键：后退 / 快进 5 秒\n长按右键或画面：临时 2 倍速\n上下键：音量 ±5%，M：静音\nF、F11、Ctrl+F：全屏\nEsc：先关闭菜单，再退出全屏',
+                ? '上下滑切集；长按画面临时 ${formatPlaybackSpeed(preferences.holdSpeed)} 倍速，松开恢复。竖屏轻点暂停，横屏轻点显示控制；双击播放或暂停。'
+                : '空格：播放 / 暂停\n左右键：后退 / 快进 5 秒\n长按右键或画面：临时 ${formatPlaybackSpeed(preferences.holdSpeed)} 倍速\n上下键：音量 ±5%，M：静音\nF、F11、Ctrl+F：全屏\nEsc：先关闭菜单，再退出全屏',
             style: helperStyle.copyWith(height: 1.6),
           ),
         ],

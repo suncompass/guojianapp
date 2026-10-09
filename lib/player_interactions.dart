@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:media_kit/media_kit.dart';
 
+import 'playback_preferences.dart';
 import 'widgets.dart';
 
 class PlayerInteractions extends ChangeNotifier {
@@ -13,6 +14,7 @@ class PlayerInteractions extends ChangeNotifier {
     required this.player,
     required this.available,
     required this.baseSpeed,
+    required this.holdSpeed,
     required this.onTogglePlayback,
     required this.onFullscreen,
     required this.onEpisode,
@@ -26,6 +28,7 @@ class PlayerInteractions extends ChangeNotifier {
   final Player player;
   final bool Function() available;
   final double Function() baseSpeed;
+  final double Function() holdSpeed;
   final VoidCallback onTogglePlayback;
   final VoidCallback onFullscreen;
   final String Function(int direction) onEpisode;
@@ -48,11 +51,13 @@ class PlayerInteractions extends ChangeNotifier {
   bool _cancelUntilRelease = false;
   bool _disposed = false;
   double _unmutedVolume = 100;
+  double _activeHoldSpeed = 2;
   String _feedback = '';
   Timer? _tapGuard;
 
   String get feedback => _feedback;
   bool get boosting => _boosting;
+  String get boostFeedback => '${formatPlaybackSpeed(_activeHoldSpeed)} 倍速';
   bool get suppressTap => _tapGuard?.isActive ?? false;
   Future<void> get pendingRates => _rates;
 
@@ -65,7 +70,7 @@ class PlayerInteractions extends ChangeNotifier {
     }
     if (!persistent && message.isNotEmpty) {
       _hintTimer = Timer(const Duration(milliseconds: 1200), () {
-        hint(_boosting ? '2 倍速' : '', persistent: true);
+        hint(_boosting ? boostFeedback : '', persistent: true);
       });
     }
   }
@@ -95,10 +100,12 @@ class PlayerInteractions extends ChangeNotifier {
           player.state.completed) {
         return;
       }
+      // 固定本次长按的实际倍率，其他反馈消失后也恢复同一倍率的提示。
+      _activeHoldSpeed = holdSpeed();
       _boosting = true;
       _held = true;
-      unawaited(_setRate(2));
-      hint('2 倍速', persistent: true);
+      unawaited(_setRate(_activeHoldSpeed));
+      hint(boostFeedback, persistent: true);
     });
   }
 
