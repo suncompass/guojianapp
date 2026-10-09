@@ -301,7 +301,13 @@ class _PlayerScreenState extends State<PlayerScreen>
             logLevel: Platform.isWindows ? MPVLogLevel.v : MPVLogLevel.error,
           ),
         );
-    _surfaceOutput = androidSurfaceViewSupported && widget.videoBuilder == null;
+    // 手机端让视频与 Flutter 界面走同一纹理合成路径，避开旋转时的
+    // 原生 SurfaceView 分层合成；电视端保留原生输出。
+    // initState 不能订阅继承依赖，_television 也尚未在 didChangeDependencies 赋值。
+    final television =
+        context.getInheritedWidgetOfExactType<AppLayout>()?.television ?? false;
+    _surfaceOutput =
+        androidSurfaceViewSupported && television && widget.videoBuilder == null;
     _video = widget.videoBuilder == null && !_surfaceOutput
         ? VideoController(
             _player,

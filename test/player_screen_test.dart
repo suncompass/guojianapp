@@ -708,6 +708,69 @@ void main() {
         debugDefaultTargetPlatformOverride = null;
       }
     });
+
+    testWidgets('physical rotation retains state portrait=$portraitVideo', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final messenger = tester.binding.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        return null;
+      });
+      try {
+        final repository = RouteRepository();
+        final player = ScriptedPlayer();
+        await mount(tester, repository, player, size: const Size(390, 844));
+        player.videoSize(
+          portraitVideo ? 1080 : 1920,
+          portraitVideo ? 1920 : 1080,
+        );
+        await settleOperations(tester);
+        final controls = find.byType(PlayerControls);
+        final controlState = tester.state(controls);
+        final surface = find.byKey(const ValueKey('player-gesture-surface'));
+        final surfaceElement = tester.element(surface);
+        final panel = find.byKey(
+          const ValueKey('play-episode-2'),
+          skipOffstage: false,
+        );
+        final opened = player.opened.length;
+        final position = player.state.position;
+        expect(panel, findsOneWidget);
+
+        // 直接改屏幕尺寸模拟物理旋转，不经过按钮的 _rotate / 盖黑路径。
+        // 这里只验证 Flutter 布局与播放状态，原生视频合成仍需真机验证。
+        for (var cycle = 0; cycle < 3; cycle++) {
+          tester.view.physicalSize = const Size(844, 390);
+          await settleOperations(tester);
+          expect(tester.widget<PlayerControls>(controls).fullscreen, isTrue);
+          expect(tester.getSize(surface), const Size(844, 390));
+          expect(panel, findsNothing, reason: '物理横屏后选集不能残留在树中');
+          expect(find.byKey(const ValueKey('player-panel-toggle')), findsNothing);
+          expect(
+            find.byKey(const ValueKey('player-rotation-blackout')),
+            findsNothing,
+          );
+          expect(tester.state(controls), same(controlState));
+          expect(tester.element(surface), same(surfaceElement));
+
+          tester.view.physicalSize = const Size(390, 844);
+          await settleOperations(tester);
+          expect(tester.widget<PlayerControls>(controls).fullscreen, isFalse);
+          expect(panel, findsOneWidget, reason: '转回竖屏后选集必须恢复');
+          expect(tester.state(controls), same(controlState));
+          expect(tester.element(surface), same(surfaceElement));
+        }
+        expect(player.opened, hasLength(opened));
+        expect(player.state.position, position);
+        expect(player.state.playing, isTrue);
+        expect(tester.takeException(), isNull);
+        await unmount(tester, player);
+      } finally {
+        messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
   }
 
   testWidgets('episode dialog waits for fullscreen rotation to settle', (
