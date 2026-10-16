@@ -45,3 +45,15 @@ func signHongguoRequest(request *http.Request, body []byte, now time.Time) {
 	request.Header.Set("X-Gorgon", hex.EncodeToString(signature))
 	request.Header.Set("X-SS-Req-Ticket", strconv.FormatInt(now.UnixMilli(), 10))
 }
+
+func prepareHongguoUnsignedRequest(request *http.Request, body []byte, now time.Time) {
+	request.Header.Del("X-Gorgon")
+	request.Header.Del("X-Khronos")
+	request.Header.Del("X-Argus")
+	request.Header.Del("X-Ladon")
+	if body != nil {
+		bodyHash := md5.Sum(body)
+		request.Header.Set("X-SS-STUB", fmt.Sprintf("%X", bodyHash))
+	}
+	request.Header.Set("X-SS-Req-Ticket", strconv.FormatInt(now.UnixMilli(), 10))
+}

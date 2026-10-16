@@ -16,9 +16,10 @@ func (downloader *Downloader) resolveHongguoAppMedia(ctx context.Context, videoI
 	if !hongguoNumericID.MatchString(videoID) {
 		return providerMedia{}, errors.New("红果视频 ID 无效")
 	}
+	ctx = context.WithValue(ctx, hongguoSkipSignKey{}, true)
 	payload := map[string]any{
 		"video_id": videoID, "content_type": 1,
-		"biz_param": map[string]any{"need_all_video_definition": true, "video_platform": 3},
+		"biz_param": map[string]any{"need_all_video_definition": true},
 	}
 	result, err := downloader.hongguoAppRequest(ctx, http.MethodPost, "/novel/player/video_model/v1/", nil, payload)
 	if err != nil {
@@ -58,8 +59,8 @@ func selectHongguoAppMedia(model map[string]any) (providerMedia, error) {
 	for _, row := range variants {
 		variant, _ := row.(map[string]any)
 		meta := nestedMap(variant, "video_meta")
-		codec := strings.ToLower(mapString(meta, "codec_type"))
-		if codec == "bytevc2" || strings.Contains(strings.ToLower(mapString(variant, "gear_des_key")), "bytevc2") {
+		codec := strings.ToLower(firstNonEmpty(mapString(meta, "codec_type"), mapString(variant, "codec_type")))
+		if codec == "bytevc2" || strings.Contains(strings.ToLower(firstNonEmpty(mapString(variant, "gear_des_key"), mapString(meta, "gear_des_key"))), "bytevc2") {
 			continue
 		}
 		addresses := hongguoMediaAddresses(variant)
@@ -68,8 +69,8 @@ func selectHongguoAppMedia(model map[string]any) (providerMedia, error) {
 		}
 		media := providerMedia{Referer: "https://novel.snssdk.com/", Duration: time.Duration(duration * float64(time.Second))}
 		encryption := nestedMap(variant, "encrypt_info")
-		spade := mapString(encryption, "spade_a")
-		if spade != "" || encryption["encrypt"] == true || mapString(encryption, "encryption_method") == "cenc-aes-ctr" {
+		spade := firstNonEmpty(mapString(encryption, "spade_a"), mapString(meta, "spade_a"))
+		if spade != "" || encryption["encrypt"] == true || firstNonEmpty(mapString(encryption, "encryption_method"), mapString(meta, "encryption_method")) == "cenc-aes-ctr" {
 			var err error
 			media.CENCKey, err = hongguoContentKey(spade)
 			if err != nil {
@@ -77,10 +78,10 @@ func selectHongguoAppMedia(model map[string]any) (providerMedia, error) {
 				continue
 			}
 		}
-		height, _ := strconv.Atoi(mapString(meta, "vheight"))
-		if definition, err := strconv.Atoi(hongguoQualityNumber.FindString(mapString(meta, "definition"))); err == nil && definition > 0 {
+		height, _ := strconv.Atoi(firstNonEmpty(mapString(meta, "vheight"), mapString(variant, "vheight")))
+		if definition, err := strconv.Atoi(hongguoQualityNumber.FindString(firstNonEmpty(mapString(meta, "definition"), mapString(variant, "definition")))); err == nil && definition > 0 {
 			height = definition
-		} else if width, _ := strconv.Atoi(mapString(meta, "vwidth")); width > 0 && (height == 0 || width < height) {
+		} else if width, _ := strconv.Atoi(firstNonEmpty(mapString(meta, "vwidth"), mapString(variant, "vwidth"))); width > 0 && (height == 0 || width < height) {
 			height = width
 		}
 		media.Quality = height

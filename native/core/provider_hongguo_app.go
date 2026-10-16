@@ -19,6 +19,8 @@ const hongguoAppBaseURL = "https://api5-normal-sinfonlineb.fqnovel.com"
 
 const hongguoAppUserAgent = "com.phoenix.read/73532 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"
 
+type hongguoSkipSignKey struct{}
+
 type hongguoCatalogCursor struct {
 	Offset        int       `json:"offset"`
 	SessionID     string    `json:"sessionId,omitempty"`
@@ -60,7 +62,7 @@ func (downloader *Downloader) hongguoClient() *hongguoAppClient {
 			details: map[string]hongguoDetailEntry{}, pending: map[string]*hongguoDetailCall{},
 			searches: map[string]hongguoSearchEntry{}, searchPending: map[string]*hongguoSearchCall{},
 			searchSeasons: map[string]*hongguoSearchSeasonCursor{},
-			suggestions:  map[string]hongguoSuggestionEntry{}, suggestPending: map[string]*hongguoSuggestionCall{},
+			suggestions:   map[string]hongguoSuggestionEntry{}, suggestPending: map[string]*hongguoSuggestionCall{},
 		}
 	})
 	return downloader.hongguo
@@ -177,6 +179,7 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 		request.Header.Set("X-XS-From-Web", "0")
 		request.Header.Set("Sdk-Version", "2")
 		comment, _ := ctx.Value(hongguoCommentKey{}).(bool)
+		skipSign, _ := ctx.Value(hongguoSkipSignKey{}).(bool)
 		var commentNonce hongguoCommentNonce
 		if comment {
 			commentNonce, err = newHongguoCommentNonce()
@@ -195,6 +198,8 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 			prepared.URL.RawQuery = query.Encode()
 			if comment {
 				signHongguoCommentRequest(prepared, commentNonce, now)
+			} else if skipSign {
+				prepareHongguoUnsignedRequest(prepared, body, now)
 			} else {
 				signHongguoRequest(prepared, body, now)
 			}
