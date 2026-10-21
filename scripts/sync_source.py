@@ -13,6 +13,7 @@ from pathlib import Path
 SOURCE_DIRECTORIES = {
     '.github', 'lib', 'native', 'android', 'windows', 'ios', 'macos', 'linux',
     'web', 'assets', 'packages', 'scripts', 'test', 'test_driver', 'integration_test',
+    'changelog',
 }
 SOURCE_FILES = {
     '.gitattributes', '.gitignore', '.metadata', '.editorconfig',

@@ -1,284 +1,64 @@
 # 红果鉴
 
-Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.3.6+2117（开发快照）**。
+Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**0.3.7+2124（开发快照）**。
 
-### 0.3.6：红果 App 取流去掉平台参数、兼容密钥双形态并跳过签名
+### [0.3.7：红果取流补 X-Argus / X-Ladon 签名，恢复失效的播放链路](changelog/0.3.7.md)
 
-红果字节 App 取流接口此前长期返回 HTTP 200 + `Content-Length: 0`，同签名下 `video_detail` 与分类接口正常，说明签名未被拒。本轮按实测定位到三处真实障碍并落地修改（依据为对上游的抓包观测，来源为用户提供的对照表；未经本机复验，故仍标为开发快照）。
+### [0.3.6：红果 App 取流去掉平台参数、兼容密钥双形态并跳过签名](changelog/0.3.6.md)
 
-- **payload 去掉 `video_platform`**：`native/core/provider_hongguo_native_media.go` 的 `resolveHongguoAppMedia` 请求体由 `biz_param:{need_all_video_definition: true, video_platform: 3}` 改为只保留 `need_all_video_definition`。带 `video_platform` 时上游返回 `101000 服务异常`；去掉后返回 `code: 0` 与完整 `video_model`。
-- **解析兼容密钥双形态**：`selectHongguoAppMedia` 原先只从嵌套的 `encrypt_info` 读 `spade_a` / `encryption_method`，现改用 `firstNonEmpty` 同时读取顶层与嵌套两种形态的 `codec_type` / `encrypt` / `spade_a` / `encryption_method` / `vheight` / `definition` / `vwidth` / `gear_des_key`，修好「拿不到 CENC 密钥」——密钥放在 `video_meta` 时同样能取到。
-- **该请求跳过签名**：新增 `hongguoSkipSignKey{}`（`provider_hongguo_app.go`）。`resolveHongguoAppMedia` 打上该标记后，`hongguoAppRequest` 不再发 `X-Gorgon` / `X-Khronos`，改走新的 `prepareHongguoUnsignedRequest`（`provider_hongguo_sign.go`）：只保留 `X-SS-STUB`（body MD5）与 `X-SS-Req-Ticket`，并显式删除签名类请求头。上游只在 `X-Gorgon` 与 `X-Khronos` **同时**出现时才校验签名，校验失败即返回空 200；单独出现 App 签名被判无效 → 去掉即可正常返回。该跳过仅作用于这条取流请求，其余红果请求（目录、搜索、详情、弹幕）保持原签名链路不变。
-- 版本号递增 `pubspec.yaml` 至 `0.3.6+2117`。
+### [0.3.5：清晰视频标题与自定义长按倍速](changelog/0.3.5.md)
 
-验证边界：本机 Go 1.27 可用，已通过 `gofmt`（仅格式化本次编辑的三个文件；`app_runtime.go` 与 `provider_hongguo_app.go` 的格式差异在 HEAD 即存在，`network_media.go:250` 的 `go vet` 锁拷贝告警与本轮无关）、`go build ./...`（native 模块编译通过）与两个覆盖 `selectHongguoAppMedia` 的定向用例（`TestHongguoBackupAddressesAndCodecAlternatives`、`TestProviderMediaCredentialsLimitOriginAndUseBackupAddresses`）。本轮未执行 Flutter 构建、真机播放复验与集中回归；三处改动是否真正让取流链路返回可播媒体，仍需实测确认，继续标为开发快照。
+### [0.3.3：手机横屏即全屏，选集改为贴右窄抽屉](changelog/0.3.3.md)
 
-### 0.3.5：清晰视频标题与自定义长按倍速
+### [0.3.2：弱化长按倍速提示，补全全屏黑边覆盖](changelog/0.3.2.md)
 
-- 全屏标题显式使用白色、16 号半粗字与暗色阴影，配合原有顶部渐变，避免浅色主题让文字融进画面；保留单行省略并补充与返回按钮的间距。
-- 「倍速」菜单新增独立的「长按倍速」设置，提供 1.5 / 2 / 3 / 4 / 5 倍快捷档位，也可输入 0.5–5 之间的小数并保存。普通播放速度与长按速度分别持久化，旧设置默认沿用 2 倍；触摸长按和键盘长按右键共用新倍率，松开或取消后恢复原播放速度。
-- 长按提示继续位于画面顶部，显示本次实际倍率，增加 25 圆角、约 22% 不透明度的淡灰背景；文字适当提亮，松手即消失，音量与错误提示不套用此背景。
-- 回归源码覆盖明暗主题标题、自定义输入校验、倍率独立保存、手势与键盘恢复、提示位置和圆角，以及旧设置兼容、失败回滚、备份和用户隔离。本轮按仓库约定未执行测试与构建，本机也未提供 Flutter / Dart 工具链；继续标为开发快照。
-- 源码检查：`git diff --check` 通过；未执行 Dart 格式化、静态分析或真机复验。`python3` 指向不可执行的 Windows 应用商店占位符，本轮源码压缩包未生成。
-- CI 补充（运行 `37880491459`，提交 `97106b3`）：`dart format` 检查 148 个文件，仅 `test/player_screen_test.dart` 的 `BoxDecoration` 类型转换折行不同，导致格式步骤退出码为 1。已按该运行的 `format-patch` 修正两行，文件 Git blob 与 CI 格式化结果一致（`deeaca1`）；没有改动业务逻辑。后续 `dart analyze` 与 `flutter test` 因前置失败被跳过，仍待新提交复验。
+### [0.3.1：移植纯绿站源与解析，站源收敛为 12 个绿色站源](changelog/0.3.1.md)
 
-### 0.3.3：手机横屏即全屏，选集改为贴右窄抽屉
+### [0.3.0：只保留红果鉴单版本并删除「在看」榜单](changelog/0.3.0.md)
 
-- 根因：`_showFullscreen` 的自动全屏分支要求 `_aspectRatio >= 1`，竖屏短剧（9:16）在手机横屏时不满足，`_playbackLayout` 因此走并排侧栏分支渲染真实的 `_episodePanel()`，右侧约 1/4 屏宽被选集内容占满、视频被挤到左侧；这同时解释了它为什么不需要点开选集就自动出现，以及前几轮「旋转快照」「弹窗竞态」修复为什么不生效。
-- 手机横屏一律按全屏播放：`_showFullscreen` 去掉宽高比与自动全屏抑制（`_automaticFullscreenSuppressed` 字段删除）两个条件，视频铺满整屏，右侧不再自动挂出选集侧栏；并排侧栏只保留给桌面 / 平板宽屏（`!_mobile && (宽 ≥ 840 或 宽 > 高 × 1.3)`）。
-- 退出全屏的方向归还同步收紧：手机横屏时退出全屏改为把设备转回竖屏（原先只有横屏视频会归还方向，竖屏短剧会留在横屏并回到侧栏布局）。
-- 选集弹窗在横屏收成贴右窄抽屉：`PlayerMenu` 横屏选集宽度由 `min(440, 宽 × 0.6)` 收到约 1/4 屏宽（844 宽实测 211），用 `constraints: BoxConstraints()` 覆盖 `Dialog` 默认的 `minWidth: 280`，`insetPadding` 贴右时避让刘海与侧边系统栏；倍速 / 清晰度 / 播放设置保留原宽度。
-- 回归用例：新增 `landscape fullscreen keeps the video full width`（竖屏短剧横屏断言视频区满宽、不挂载选集、点开后抽屉约 1/4 屏宽且贴右不越界）；`collapsed panel follows auto advance and survives rotation` 的横屏断言由「转横屏用侧栏」改为「铺满整屏且不挂选集」。
-- 验证：CI 的 `dart` job 通过（`dart format`、`dart analyze` 与全部 `flutter test` 用例）；顺带修掉两个自 0.3.2 起就红、与本次改动无关的用例：平台回包里量尺寸导致记录列表为空，以及旋转等待留下的悬挂 2 秒定时器。
+### [0.2.99：修正首页预加载时序与超果完结判定](changelog/0.2.99.md)
 
-### 0.3.2：弱化长按倍速提示，补全全屏黑边覆盖
+### [0.2.98：接入第 11 个短剧站源「超果」](changelog/0.2.98.md)
 
-- 长按提示改为画面顶部的「2 倍速」小字，字号 12、约 35% 白色不透明度、普通字重，不带底色或阴影；松手直接清除提示并恢复原速，不再闪出较大的恢复文字。其他手势反馈保留原样。
-- 手机进入全屏时直接完成面板收起布局，再等待无面板帧后请求系统旋转；全屏视频区不再由左右 SafeArea 留空，控制栏仍单独避让系统栏。旋转等待期间若播放器已经关闭，不再发起方向请求。
-- `StableVideoViewport` 在原生视频上方显式绘制实际画面之外的纯黑遮罩并裁剪视口，不只依赖视频下方的黑色背景。保持原生视频实例、输出尺寸、播放进度与倍速，针对截图中右侧黑边残留选集数字的情况补强覆盖。
-- 回归用例覆盖提示位置、字号、透明度与松手清除，系统旋转请求时视频区已占满页面，存在侧边安全区时的全屏宽度，以及横竖屏黑边像素覆盖与媒体实例稳定性。
-- 验证边界：`git diff --check` 通过；本机未提供 Flutter / Dart 工具链，本轮未执行 Flutter 测试、静态分析、平台构建或真机复验，继续标为开发快照。`python3` 仍指向不可执行的 Windows 应用商店占位符，已尝试运行收尾脚本但失败，本轮未生成源码压缩包。
+### [0.2.97：合并源项目的首页懒加载预加载](changelog/0.2.97.md)
 
-### 0.3.1：移植纯绿站源与解析，站源收敛为 12 个绿色站源
+### [0.2.96：播放器下方栏目可收起，发布脚本草稿读回修复](changelog/0.2.96.md)
 
-- 来源与范围：对照纯绿源码（`F:/down/短剧app/guoapp纯绿源码`），把其中的站源与解析移植到本仓库，**排除直播与「在看」**两块。移植后应用只提供 12 个绿色站源：红果（`hongguo`）与芽果、猫果、饭果、观果、河果、星果、花果、牛果、伍果、米果（`miguo`）、爽果（`shuangguo`）共 11 个绿色短剧站源。
+### [0.2.95：播放器核心生命周期状态收敛](changelog/0.2.95.md)
 
-- 站源增减：新增米果（大米星球 · 网页目录）与爽果（短剧网 · 网页目录）；超果、皮果、网果、发果、黄豆、剧果、野果、帝果、黄果视频 / AI / 旧版，以及艳果等成人站源全部退役。退役站源**只在原生解析层保留常量与解析分支，不再注册、不放行**；Dart 侧把它们收进 `SourceSite.retiredIds`，`isKnown` 仍为 `true`，因此升级后旧用户的历史、追剧与站源权限字段继续被识别，不会被判成无效配置。
+### [0.2.94：大剧库保存移出引擎锁](changelog/0.2.94.md)
 
-- 可见性单一判定：站源可见性只在 `native/core/app_build.go` 的 `nativeGreenSources` 白名单一处判定，`nativeSourceAvailable` 改为「白名单 ∧ 已注册」。此前判断分散在多处、容易漏改，现在名单即唯一权威；`AGENTS.md` 同步记录该约定。
+### [0.2.93：go job 随机红的根因与修复，dart 双变体转绿](changelog/0.2.93.md)
 
-- 原生解析移植：`native/core/provider_duanju_maccms.go` 扩写 348 行，补齐选集去重、分集归属两级筛选、占位地址剔除、`const source` 优先、标题清洗、按站源补路由与导航链接排除；`provider_duanju_dispatch.go` 改为按 `spec.Kind == "maccms"` 数据驱动分发，加入单片站判定与播放页两跳解析；`duanjuBaseURL` 在同源时只换主机、保留注册路径前缀。`provider_duanju.go` 注册米果 / 爽果，`duanjuSourceSpec` 增加 `Single` / `Suggest` 两项。
+### [0.2.92：复核 0.2.91 的 CI 结果并回退一处误改](changelog/0.2.92.md)
 
-- 榜单：`native/core/provider_rankings.go` 补米果 6 个、爽果 8 个榜单入口，榜单请求与展示都按白名单过滤，白名单外的站源榜单不再出现在列表里。
+### [0.2.91：CI 首轮结果与三处测试失败修复](changelog/0.2.91.md)
 
-- 红果搜索真分页：`provider_hongguo_search.go` 接入真分页入口；`provider_hongguo_search_seasons.go` 增加季数游标，第 2 页起每页跑一小批季数探测，建议接口与搜索页两路结果合并；`app_runtime.go` 把 `hasMore` 回填到目录结果；Dart 侧修掉 `lib/catalog_browser.dart` 里「`hasMore` 为真却未推进页码」导致「加载更多」原地打转的问题。
+### [0.2.90：检查拆分、镜像改写修复与后台轮询收尾](changelog/0.2.90.md)
 
-- 联网换出口重试：新增 `lib/network_exit.dart`（`NetworkExit.worthBypassing` / `borrow`），`lib/core_bridge.dart` 的 `_invokeNative` 在「信封 `ok:false`」判定处对**只读动作**触发换出口重试，写入类动作不重复提交；Android `MainActivity.kt` 新增 `vpnActive` / `bindPhysicalNetwork`，VPN 生效时把请求绑到物理网络。
+### [0.2.89：桥接解析减负与下载页按需刷新](changelog/0.2.89.md)
 
-- 保留本项目更优实现，未回退：播放器五态机与面板折叠、`writeCatalogDiskLocked` 锁外保存 + `saveMu`、桥接 isolate 编解码与错误分类、下载页按需轮询、首页预加载准入，以及超果完结判定口径（纯绿那份会把「2/43 可播放」误判为已完结）。
+### [0.2.88：推荐身份改用系统安全存储](changelog/0.2.88.md)
 
-- 测试：新增 `native/core/app_green_sources_test.go`，守住「白名单与注册表逐条一致」「名单外站源不可用」「每个注册站源三条分派链路都已接通」「米果不分页 / 爽果分页」；同步更新 `app_build_test.go`、`provider_duanju_test.go`（注册数 11→12）、`provider_rankings_duanju_test.go`、`test/app_build_test.dart`、`test/ranking_models_test.dart`。
+### [0.2.87：优化计划第一批（安全与发布）](changelog/0.2.87.md)
 
-- 版本与验证边界：`pubspec.yaml` 由 `0.3.0+2106` 递增为 `0.3.1+2107`。本机仍无 Go / Flutter / Dart 工具链，`python3` 为 Windows 应用商店占位符，Go 用例、Flutter 测试、`dart analyze` 与格式检查全部由 CI 的 `scripts` / `dart` / `go` 三个 job 覆盖；本轮未打包、未安装真机，站源真实连通与解析仍待集中验收。
-
-### 0.3.0：只保留红果鉴单版本并删除「在看」榜单
-
-- 「在看」整套实现（`feeds_screen.dart`、`recommendation_*`、`nostr_*`、`secret_store` 及其测试）已删除：底部导航回到「主页 / 追剧 / 历史 / 下载」，播放器不再上报观看进度，Android Keystore 与 Windows DPAPI 的密钥保护通道一并移除（iOS 本来没有）。
-
-- 真果鉴（全站源）变体下线：构建脚本不再有 `BuildVariant` 与 `--all-sources`，CI 只出 `hongguojian-android` / `hongguojian-ios-unsigned`；品牌资源、Gradle、CMake、`Runner.rc` 与 Dart 常量统一为红果鉴。
-
-- 客户端站源收敛为红果单一源，旧站源移入 `retiredIds`，`isKnown` 仍为 `true`，避免升级后已有用户的历史、追剧与站源权限被判定为无效配置；原生核心分派层只保留红果路径（第三方站源实现文件在当时保留，0.3.1 起重新接线为 11 个绿色站源）。
-
-- GitHub Release 附件名由 `{commit12}-{runId}-{attempt}` 改为 `{runId}-{attempt}`，不再暴露提交哈希，同时仍保证重跑不会覆盖已公开的下载地址。
-
-- 版本由 `0.2.99+2105` 递增为 `0.3.0+2106`。
-
-### 0.2.99：修正首页预加载时序与超果完结判定
-
-- 超果完结判定：`N/M 可播放` 原来把分子当总集数、分母当可播放集数，于是分母不小于分子就判完结——`2/43 可播放`（只放出前几集）会被标成「已完结」，污染完结筛选。现按分子=可播放、分母=页面标注集数比较，只有整部可播放才判完结；分母仅在页面没有集数标注时兜底为集数。
-
-- 预加载布局时序：`_load` 收尾原来同步调用 `_schedulePrefetch()`，冷启动时列表控件尚未挂载、或尺寸还是追加前的旧值，于是首屏不足两屏时不补页、余量充足时又提前补页。现改为在下一帧布局结束后再判断提前量。
-
-- 预加载准入：`_canPrefetch` 增加三项约束——上一轮加载报错时不自动续页，避免对故障站源反复取页；当前路由不是最上层时不取页，覆盖打开详情、榜单、站源诊断等首页仍挂载的场景；在线搜索下输入框内容与已提交查询不一致时不取页，避免未提交的关键词被当作续页查询发出并替换列表。
-
-- 电视端返回：返回键切回主页原来直接改写 `_tab`，绕过 `_changeTab`，既不清选择态也不恢复预加载；现统一走 `_changeTab(_tabDiscover)`。
-
-- 测试：`test/widget_test.dart` 增加「冷启动首屏不足两屏时自动续取下一页」，用新鲜磁盘缓存加单条内容断言首轮布局后自动取缓存页的下一页（旧实现在该场景不会发起请求）；`native/core/provider_duanju_chaoguo_test.go` 增加完结比例与集数口径两个用例。
-
-- 集数口径：详情返回的集数是可播放分集数，这是全站源既有约定（`nativeDetail` 对所有站源写入 `len(chapters)`）；页面标注的总集数只留在解析层，不是本次新增的偏差。
-
-- 验证：本机无 Go / Dart 工具链，`python3` 为 Windows 应用商店占位符，Go 与 Flutter 用例、静态检查与收尾脚本只能由 CI 或具备工具链的机器执行。
-
-### 0.2.98：接入第 11 个短剧站源「超果」
-
-- 来源：源项目（0.2.92）的超果实现。Go 侧新增 `native/core/provider_duanju_chaoguo.go`（491 行）与 `provider_duanju_chaoguo_test.go`（187 行），两者与源项目逐字节一致；注册表、别名、host 识别、分类白名单、静态分类与 dispatch 的三个分支落在既有文件，也是源项目对应 hunk 的逐字合并。
-
-- 站源能力：站点 `https://www.shanekids.com` 是服务端渲染 HTML、没有接口文档，因此按页面语义解析——卡片取 `a.card[href^="/drama/"]`（`title` 是剧名、`.card-eps` 是集数、`.card-brief` 是简介），目录 `/explore?sort=hot&page=N`，分类沿用站点自带的 class（`mainstream` / `adult` / `anime_ip`）与 tag；详情页解析 `hero-meta`（⭐ 评分、集数、播放量、分类）、`chips`（标签）、`N/M 可播放`（完本判定）与 `button.ep-btn[data-src][data-seq]`（分集与真实媒体地址）；搜索走 `/explore?q=…&page=N`，首页空结果报错、后续页空结果静默；榜单取 `/rank`（热播榜，单页）与分类顺序榜。
-
-- 接线：新增 `sourceChaoguo` 常量与 `chaoguoBaseURL`，目录注册项 `{ID: sourceChaoguo, Name: "超果", Kind: "web", Searcher: true, Paged: true}`，别名 `chaoguo` / `chaoduanju` / `超短剧` / `超果` / `shanekids` / `www.shanekids.com` / `shanekids.com`，host 识别 `www.shanekids.com`；分类白名单区分 `class:` 与 `tag:` 前缀（tag 限 16 字且只允许字母数字、汉字、`-`、`_`），静态分类 20 项；榜单 8 项，其中 `chaoguo-hot` 走 `/rank`，其余按站点分类顺序取；dispatch 接入目录、详情与单页搜索。
-
-- 搜索分页：短剧站源搜索入口改为 `searchDuanjuPage(ctx, source, query, page)`，非超果源回退原有单页搜索，`native/core/app_runtime.go` 同时回填 `result.HasMore`，目录 `hasMore` 不再丢弃；配合 `lib/models.dart` 的 `duanjuPaged` 名单新增 `chaoguo`、`duanjuValues` 登记 `SourceSite('chaoguo', '超果', '超短剧 · 网页目录')`，Dart 侧只做站源登记与权限，界面不新增硬编码；`test/ranking_models_test.dart` 增补 8 个超果榜单到站源的映射。
-
-- 既有断言同步：`native/core/provider_duanju_test.go` 的站源数量断言由 10 改为 11（保留 0.2.93 的观果空详情修复）；`provider_rankings_duanju_test.go` 的榜单归属计数补 `sourceChaoguo: 8`，并允许 `chaoguo-hot` 没有分类（该榜走 `/rank`）；`provider_live_test.go` 增加 `TestLiveChaoguoCatalogSearchRankingAndDetail`（默认跳过，仅 `CHECK_LIVE_PROVIDERS=true` 时访问真实站点）。
-
-- 验证：本机无 Go / Dart 工具链，`go test -race ./...`（默认与 ALL_SOURCES 两个变体）、`flutter test` 与 `dart analyze` 由 CI 覆盖。合并后 `provider_duanju.go`、`provider_duanju_dispatch.go`、`provider_rankings.go`、`provider_rankings_duanju_test.go`、`provider_live_test.go`、`lib/models.dart`、`test/ranking_models_test.dart` 与源项目逐字节一致；`native/core/app_runtime.go` 只保留 0.2.94 的 `saveMu` 差异，`native/core/app_sources.go` 保留 0.2.90 的分页续载修复。
-
-### 0.2.97：合并源项目的首页懒加载预加载
-
-- 来源：源项目（0.2.92）的 `lib/catalog_prefetch.dart` 与 `test/catalog_prefetch_test.dart`。按约定范围只搬「首页预加载与其接线」，站源（超果 provider）与直播（`lib/live_*.dart`）本次不合并。
-
-- 改动：新增 `lib/catalog_prefetch.dart`，内容与源项目一致。`CatalogPrefetchScheduler` 在滚动期间只记录 `extentAfter` / `viewport` 并重置轮数，停止滚动 320ms（`idleDelay`）后进入空闲才补取下一页，单次空闲最多 3 轮（`maxRounds`）；提前量小于 2 屏（`bufferScreens`）才认为需要补页。`hold()` / `resume()` 用于离开与回到首页，`dispose()` 取消定时器并清空回调。
-
-- 接线：`lib/home_screen.dart` 新增 `final _prefetch = CatalogPrefetchScheduler();`，`initState` 把 `onIdle` 接到 `_prefetchCatalog()`，`_onCatalogScroll` 顶部把滚动位置喂给调度器，`_load` 收尾调用 `_schedulePrefetch()` 让每次取页完成后重新判断，`_changeTab` 由表达式体改为语句体——离开主页 `hold()`、回到主页 `resume()` 并在下一帧补一次调度。`_canPrefetch` 沿用原有约束：主页页签、非推荐聚合、还有下一页、当前不在加载、滚动已挂载。
-
-- 与原有滚动加载的关系：`_onCatalogScroll` 里基于 1.5 屏阈值的即时取页保留（电视端与快速滚动仍靠它），预加载只在其外补一条「停手即补」的路径；两者共用 `_load(more: true)` 的 `_loading / _loadingMore / _hasMore` 并发保护，不会重复发请求。
-
-- 测试：新增 `test/catalog_prefetch_test.dart`，8 项用例覆盖快速滚动期间不触发、提前量充足不取页、单次空闲不超过上限轮数、切页签重置轮数并暂停、返回首页解除暂停、首屏不足一屏时继续取页、视口不可用不判断、释放后不再回调。源测试用 `package:fake_async`，本仓库未声明该依赖且 CI 走 `flutter pub get --enforce-lockfile`，故改用 `testWidgets` 自带的假时钟（`tester.pump(时长)` 等价于 `fakeAsync.elapse`），用例语义与源项目一致。
-
-- 验证：本机无 Dart 工具链，`dart format` / `dart analyze` / `flutter test` 由 CI 的 `dart` job 覆盖（默认 + ALL_SOURCES 两个变体）。
-
-### 0.2.96：播放器下方栏目可收起，发布脚本草稿读回修复
-
-- 需求：手机播放页给画面下方的选集 / 简介 / 推荐 / 下载整块一个收起入口，收起后视频区吃满可用高度，同时不能丢选集滚动位置、当前标签和下载勾选状态。
-
-- 改动：`lib/player_screen.dart` 新增 `_mobilePanelCollapsed`，面板尺寸收成两个常量 `_mobilePanelHeaderHeight`（收起后仍可见的头部高度 48）与 `_mobilePanelHeightFraction`（面板占可用高度比例 `.44`）。`_mobilePlaybackPanel` 改为接收 `availableHeight` 自行按比例算高度，收起时用 `AnimatedAlign.heightFactor = 48 / height` 压到头部、外层 `ClipRect` 裁切：面板内部高度不变，动画过程中选集网格不会被挤到溢出，展开后选集滚动位置、当前标签与下载勾选状态都还在（内容用 `Visibility(maintainState: true)` 保活）。动画 220ms `easeInOutCubic`，系统关闭动效时退化为 `Duration.zero`。
-
-- 头部拆分：原 `_mobileTabs` 兼做「标签行」与「收起态摘要」，现拆为 `_mobilePanelHeader`（外壳）、`_mobileTabRow`（四个标签）、`_mobileCollapsedSummary`（收起态显示「第 N 集 · 共 M 集」，跟随自动连播）、`_mobilePanelToggle`（折叠开关）。开关常驻头部右侧，收起后仍是一触可达的恢复入口；播放控制层在无操作 3 秒（全屏 4 秒）后会淡出，把开关放进控制层等于收起后画面下方不留任何恢复痕迹，故未采用该方案。
-
-- 下载角标：收起后面板是下载进度的唯一展示位置，因此新增 `player-download-badge`（下载图标 +「N 集 P%」，取活动任务平均进度）。仅在「已收起且确有活动任务」时以 10 秒低频探测 `repository.downloads()`，任务结束或面板展开即停止，`dispose` 一并取消定时器；前置校验 `supportsDownloads && canDownload`，探测失败静默忽略、不影响播放。角标可点，直接展开面板并切到下载页。
-
-- 显示范围：折叠入口与角标都在手机竖屏分支内，宽屏是左右分栏、没有可收起的模块，两者不受影响；移动端竖向滑动已被「上滑下一集 / 下滑上一集」占用，所以不引入手势，只用按钮。
-
-- 验证：本机无 Dart 工具链，编译与用例由 CI 的 `dart` job 覆盖（默认 + ALL_SOURCES 两个变体）。`test/player_screen_test.dart` 新增 4 组用例：`$platform portrait panel collapses without restarting playback`（平台矩阵 + 底部安全区，断言收起后视频区变高、头部贴住安全区、面板内容离屏、播放位置 / 倍速 / 播放状态不变）、`collapsing preserves the selected tab and paused playback`、`collapsed panel follows auto advance and survives rotation`（收起态跟随自动连播，转横屏按全屏播放且不带着竖屏折叠状态）、`collapsed panel keeps download progress reachable`（角标出现，点击回到下载页）。
-
-- 同批修复 `scripts/publish_release.py` 的草稿读回缺陷（来自 PR #1）：`create_draft` 建出草稿后用 `GET /releases/tags/{tag}` 读回，而该接口只返回已发布 release（GitHub 文档原文 “Get a published release with the specified tag.”），因此在从无 release 的仓库首次按 tag 发布时必然抛 `New draft release cannot be read`；上游仓库只有 `latest` 一个 release，一直走「直接命中已有 release」分支，从未触发。改为新增 `draft(tag)`，用列表接口 `GET /releases?per_page=100`（`--paginate --slurp`）按 `tag_name` 且 `draft` 为真匹配，`create_draft` 改用它。`scripts/test_publish_release.py` 的 `FakeRelease` 同步复现真实语义（`release()` 看不到草稿、`draft()` 能看到），新增 3 项用例覆盖「首次发布经列表接口找到草稿」「列表里没有草稿时报错」「同 tag 的已发布 release 不被误认成草稿」，由 CI 的 `scripts` job 执行。待验收：按 tag 首次发布在读完草稿后还要 `gh release upload <tag>`，若该步同样无法按 tag 解析草稿，失败点会从读回前移到上传，只有真打一次 tag 才能确认。
-
-### 0.2.95：播放器核心生命周期状态收敛
-
-- 问题：`_PlayerScreenState`（约 2500 行）用三个互相独立的布尔维护核心生命周期——`_loading`（打开一集中）、`_buffering`（缓冲中）、`_closed`（已销毁），失败态则隐含在 `_error != null` 里。四个信号没有约束关系，任何一处漏改都会出现「已关闭却还在缓冲」「既在打开又在报错」这类不可能状态，且编译器无法拦截。
-
-- 改动：新增 `lib/playback_phase.dart`，定义五态枚举 `PlaybackPhase { opening, ready, buffering, failed, closed }` 和带显式迁移表的 `PlaybackPhaseMachine`。`player_screen.dart` 里 `_loading` / `_buffering` / `_closed` 全部改为从 `_phase` 派生的 getter（约 80 处读取点零改动），7 处赋值点改为 `_setPhase(...)` 显式迁移：`_play` 进入 opening，打开成功按 `player.state.buffering` 落位 ready/buffering，打开失败与恢复停止进入 failed（与 `_error` 非空对应），dispose 进入 closed 终态。
-
-- 迁移表约束：opening 只能到 ready/buffering/failed/closed；ready 与 buffering 互相往返，也可 opening（换集）或 failed；failed 只能重开（opening）或关闭；closed 是终态。`enter` 返回是否接受，确定性迁移处用 `assert` 拦截非法调用，事件驱动的缓冲流监听对非 ready/buffering 阶段静默忽略（与旧代码里「失败后只改标志位」的行为等价）。
-
-- 语义保持：缓冲事件在 opening 阶段不迁移，打开完成时统一读取 `player.state.buffering` 落位，避免「缓冲中」文案盖过「正在准备播放」；UI 层（`_loading || _buffering` 的叠加判断、控件可用性、恢复流程的 `_acceptErrors` / `_pendingError` 门控）全部不变。
-
-- 新增 `test/playback_phase_test.dart`：9 项用例覆盖初始状态、全表迁移、ready↔buffering 往返、failed 拒绝直达 ready、closed 终态不可逆、重复进入幂等、拒绝不改状态与一条完整生命周期链。
-
-- 验证：本机无 Dart 工具链，编译与用例执行由 CI 的 `dart` job 覆盖（默认 + ALL_SOURCES 两个变体）。
-
-
-### 0.2.94：大剧库保存移出引擎锁
-
-- 问题：`catalogs.json` 单文件最大 32 MiB，保存时把「整份 JSON 编码 + 临时文件写入 + fsync」全放在引擎锁 `engine.mu` 里做。手机上目录越大，每次分页保存占住全局锁的时间越长，期间目录读取、播放地址解析等请求只能排队。
-
-- 改动：`native/core/app_catalog_cache.go` 的 `writeCatalogDiskLocked` 先在锁内取一份完整快照，随后交还 `engine.mu`，在锁外编码与落盘，最后重新加锁提交结果。函数仍满足 `...Locked` 约定（返回时持有锁），因此 12 处调用点——目录分页、分类、封面回写、资料补齐、剧库导入、推荐、站源任务重试与剧库重试保存——都不用改。
-
-- 快照必须逐条复制元素：序列化期间其他路径会就地改内存（例如 `saveCoverAddress` 直接写 `items[index].Cover`），共享底层数组会变成数据竞争。`hongguoCatalog` 复用既有的 `cloneHongguoCatalogState`，推荐的 `Seen` 列表也单独复制。
-
-- 新增保存锁 `saveMu`：写盘必须串行，否则两个快照并发落盘时旧的那份可能后到，把磁盘内容写回旧版本。锁序只有「保存锁 → 引擎锁」，进入保存锁之前一定先交还引擎锁，不构成环；进入保存锁后也只做纯编码与文件写入。
-
-- 语义保持：保存仍在发起调用的 goroutine 内完成，失败原因照旧由本次调用返回、按原有文案上报；`deferCatalogSave`、保存失败重试、32 MiB 上限与 `sourceRecords` 的「等待保存 / 已保存」状态都不变，`TestNativeCatalogSaveFailureRetriesWithoutAdvancing`、`TestNativeCatalogSizeLimitPreservesPreviousFile`、`TestNativeCatalogDeferredSaveWritesOnce` 等继续覆盖。
-
-- 新增 `native/core/app_catalog_save_lock_test.go` 的 `TestNativeCatalogSaveLeavesEngineLockFree`：用测试钩子卡在「快照完成、开始编码」处，断言此时另一个 `nativeCached` 请求能立刻拿到引擎锁（旧实现要等写盘结束）。
-
-- 验证：本机仍无 Go 工具链，编译与用例执行由 CI 的 `go` job 覆盖（`-race` 与 ALL_SOURCES 两个变体）。
-
-### 0.2.93：go job 随机红的根因与修复，dart 双变体转绿
-
-复核 0.2.92 的运行 `37190472913`：`dart` **success**，`scripts` success，`ios` 两版 success；`go` failure；`android` 两版与 `release` 被取消（整个 run 的结论是 `cancelled`），所以出包链路这一轮没有走完。
-
-`dart` 这次两套测试都跑完了：默认变体 254 通过 / 3 跳过，全站源变体（`ALL_SOURCES=true`）257 通过。上一轮整段回退 `test/recommendation_service_test.dart` 确认有效（前一次是 237 通过 / 17 失败），而且新加的 `if: ${{ !cancelled() }}` 让第二套测试第一次完整上报——它以前只要第一套红就被跳过，现在能看到全站源变体比默认变体多跑 3 项用例。
-
-同一次运行的 `go` job 红在一个此前没暴露的问题上：`TestDuanjuGuanguoEmptyDetailIsReportedAsUpstream` 在 `-ldflags buildAllSources=true` 变体里报 `context deadline exceeded`，请求地址是真实的 `api.drama.9ddm.com`。这个用例本来该是纯本地的：它自己起了 `httptest` fixture 并返回空详情，却漏了把宿主指过去的那行 `d.providerHosts[sourceGuanguo] = server.URL`（同文件里其它观果用例都写了），于是 fixture 服务器白建、请求打到真实站点，站点一慢就把「上游返回空数据」变成「网络超时」。同一个 run 里先跑的 `go test -race ./...` 是 `ok`，两遍之间只差网络时延，属于典型的随机红。0.2.93 补上这一行，用例恢复为纯本地执行。
-
-验证方式：本机仍无 Go / Dart 工具链。改动只有一行赋值，静态核对的是同文件既有写法、`duanjuBaseURL` 对 `providerHosts` 的优先使用，以及 `duanjuFindList` 对 JSON `null` 返回 `nil`（因此 fixture 的空详情仍会走到「返回空数据」分支）；实际编译与用例执行由 CI 的 `go` job 覆盖。
-
-后续顺序：大剧库持久化（引擎锁内的整份序列化）与播放器状态整理；站源契约；README 顶部状态收敛。
-
-### 0.2.92：复核 0.2.91 的 CI 结果并回退一处误改
-
-推送 `6781f49` 后运行 `37189984306` 给出复核结果：`dart` job 仍然 **failure**。这次是 237 通过、17 失败、3 跳过，17 项全部落在 `test/recommendation_service_test.dart`，报错位置是该文件 `setUp` / `tearDown` 的第 132、138 行，内容为 `Binding has not yet been initialized.`——`TestDefaultBinaryMessengerBinding.instance` 在从未初始化 binding 的测试文件里直接抛错。
-
-上一轮的判断有一处过度推广：`test/feeds_screen_test.dart` 的两项失败确实是「未挂 mock 的 `duanju/device` 通道在 widget 测试里不回包 → `SecretStore._protect` 的 5 秒超时定时器悬挂」，但 `test/recommendation_service_test.dart` 用的是普通 `test()`、没有 `testWidgets`，它此前在 CI 上是绿的，把同一套 mock 加进它的 `setUp` 反而让全部 17 个用例在初始化阶段就失败。本轮把该文件的改动整段回退，与 `8685080` 字节一致。
-
-同一次运行也证实另外两处修复有效：`test/feeds_screen_test.dart` 的底部导航入口、远端推荐入榜两项，以及 `test/secret_store_test.dart` 的「预载是幂等的」用例都没有再失败。
-
-顺带补一处反馈盲区：`dart` job 的第二套测试（`ALL_SOURCES=true` 变体）此前在第一套失败时被 Actions 自动跳过，等于每轮只拿到一半反馈，修一轮要两趟 CI 才能收敛。现在该步骤加上 `if: ${{ !cancelled() }}` 条件，两套测试都执行、都上报；`scripts/test_workflow.py` 增加不变量守住这一条。
-
-说明：运行 `37189984306` 的整体结论是 `cancelled`——`dart` job 自身跑完并给出结论，`android` / `ios` 出包 job 在 `dart` 报错后被取消，所以 0.2.91 那两处 Dart 改动这一轮没有走完出包链路（上一轮 `37188966356` 的两版 APK 均已成功产出）。
-
-### 0.2.91：CI 首轮结果与三处测试失败修复
-
-推送 `2f02d47` / `dcdbfb6` / `8685080` 后，Actions 运行 `37188966356`（HEAD `86850801`）给出第一批真实反馈。一次 push 只产生一个 run，所以 0.2.88 / 0.2.89 / 0.2.90 三批都由这一个 run 覆盖，没有漏测。
-
-各 job 结果：`scripts` success（脚本测试在 CI 上全绿，确认本机那 2 项失败确实只是 NDK 自带 Python 的 `platform.uname` 环境问题）；`go` success；`android` 两版 success（Kotlin 的 Keystore 改动与 Go 核心都能编译，两个 APK 都产出）；`ios` 两个 success；`release` success（`scripts/publish_release.py` 端到端跑通，滚动 `latest` 已更新）；`dart` **failure**。
-
-拆 job 立刻见效：以前这几项共用一个 job，`dart` 一失败会把 `go` 一起挡掉，现在 `go` 的结果照常上报。`dart` job 内部 `dart format` 与 `dart analyze` 都通过，失败发生在 `flutter test`：251 通过、3 失败、3 跳过。新增的 `test/core_bridge_error_test.dart`、`test/downloads_polling_test.dart`、`test/nostr_validation_test.dart`、`test/nostr_relay_test.dart` 全部通过，即 BIP-340 验签、本地 WebSocket relay 加固与桥接分类报错都已由 CI 验证。
-
-三处失败与修复：
-
-- `test/feeds_screen_test.dart` 两项（底部导航入口、其他用户推荐入榜）失败在 “Pending timers”：widget 测试里未挂 mock 的 `duanju/device` 通道不会回包，`SecretStore._protect` 的 5 秒超时定时器一直挂着。现在这两个测试显式把通道 mock 成返回 null（等价于平台不支持安全存储），身份走明文回退，超时定时器也能正常取消。任何挂载首页的 widget 测试都要注意这一条。
-- `test/secret_store_test.dart` 的「预载是幂等的」失败在 `cached` 为 null：`initialize` 只从 `.secret` 密文键预载，而该用例只写了明文键；另外静态状态在用例之间没有重置。现在 setUp 里调用 `SecretStore.reset()`，用例改为先用假平台写入密文、再重启预载。
-- 清理新增代码带来的 4 条 analyzer info：两处多余的 `dart:typed_data` 导入、`_subscribe` 改用空感知元素 `?until`、`_onClosed` 的 `if` 补上花括号。
-
-`dart format` 在 CI 上通过这一条也修正了前面的判断：本机临时 WASM `dart_style` 报的那 5 个「未格式化」文件属于工具差异，不是仓库问题，上一轮把它们还原是对的。
-
-### 0.2.90：检查拆分、镜像改写修复与后台轮询收尾
-
-- 修复 `scripts/build_mirrors.py` 的 CRLF 缺陷：改写正则用 `$` 收尾，而 Windows 检出的 `pubspec.lock` 是 CRLF，匹配失败后会静默跳过改写（本机实测锁文件 957 处 CRLF、改写正则不匹配），`--cn-mirrors` 实际上没有改过锁文件。现在 `\r` 跟随行尾一起保留，LF / CRLF 都能改写，并补了 CRLF 回归用例。`build_ios.py`、`package_release.py`、`smoke_windows.py` 读的是 `pubspec.yaml`（`eol=lf`），正则也不锚定行尾，不受影响。
-- GitHub Actions 的检查拆成 `scripts` / `dart` / `go` 三个独立 job。以前共用一个 `checks` job，`dart format` 或 Flutter 测试一失败，后面的 `go test` 根本不会执行，Go 侧结果长期看不到。打包与发布关系不变：`release` 只依赖 `android` 与 `ios`，检查失败不阻塞出包。
-- 新增 `scripts/test_workflow.py` 守住这些不变量：三个检查 job 存在且各自跑对应命令、`dart` job 跑两种编译配置的 Flutter 测试、`go` job 在 `native` 目录跑两种 Go 测试、`release` 不依赖任何检查 job 且要求 `android` 成功、两版与两平台仍在构建。
-- 站源任务轮询离开前台就停：`lib/library_updater.dart` 原来每 2 秒无条件唤醒，现在 `paused` / `hidden` 直接跳过，后台更新不再驱动界面刷新；`inactive` 仍算在屏，与播放器 0.2.78 的判断保持一致。
-- 验证：`scripts` 测试 32 项（29 通过、1 跳过、2 项失败）。失败的两项是本机用 Android NDK 自带 Python 跑 `test_app_build` 时 `platform.uname` 不可用，CI 的 Python 不受影响；workflow 另用 js-yaml 解析并逐条核对结构。Dart 侧用临时 WASM `dart_style` 按 `3.12.0` 校验。本机没有 Dart/Flutter 与 Go 工具链，Flutter 测试、Go 测试与 Android / Windows 构建待 CI。
-- 说明：本机同样没有 Go 工具链（`go` / `gofmt` 都不在 PATH），所以大剧库持久化那一项本轮没有动。它要改动的是引擎锁内的整份序列化，写错会让打包 job 编译原生核心时直接失败，不适合在没有编译反馈的情况下盲改。
-
-### 0.2.89：桥接解析减负与下载页按需刷新
-
-- 桥接调用改为在同一个工作 isolate 内完成「请求编码 → 原生调用 → 响应解码」：大目录响应与剧库包的 JSON / Base64 处理不再占用界面线程。剧库包导入的字节直接交给该 isolate 编码，导出结果的 Base64 解码也单独移了进去。
-- 桥接错误按原因分类：核心缺失（`core_unavailable`）、平台不支持（`core_unsupported`）、请求无法编码（`bridge_encode`）、返回数据无法解析（`core_protocol`）各给各的提示。核心加载失败仍保留「请使用完整安装包重新安装」，其他请求失败不再误报成需要重装。
-- 下载页不再固定每 2 秒轮询并重建：没有任务时不轮询；只剩已完成任务、页面被别的路由（例如播放页）盖住、或当前用户不可下载时降到 8 秒；有活动任务或正在批量操作才用原来的 2 秒。切到后台停止，回到前台立即刷新一次；任务数据没变化时只替换数据、不触发重建。
-- 验证：新增 `test/downloads_polling_test.dart` 覆盖空列表不轮询、活动任务 2 秒、仅完成任务 8 秒与内容保持；新增 `test/core_bridge_error_test.dart`，在没有原生核心的环境里覆盖分类报错与 isolate 信封往返。Dart 侧仍用临时 WASM `dart_style` 按 `3.12.0` 校验解析与格式；本机没有 Dart/Flutter 工具链，Flutter 测试与 Android / Windows 构建待 CI 与集中验收。
-- 遗留：`lib/library_updater.dart` 与首页的任务轮询是同类写法，本轮未动。
-
-### 0.2.88：推荐身份改用系统安全存储
-
-- 本轮本机检查：`scripts` 全量 28 项里 24 项通过、1 项跳过；仍失败的 3 项是既有的 `test_app_build` 两项（NDK 自带 Python 的 `platform.uname` 在该环境不可用）与 `test_build_mirrors` 一项（用例期望的 lock 镜像地址与当前 `pubspec.lock` 不一致），与本次改动无关；上一批新增的 `test_publish_release.py` 10 项全部通过。
-
-- 推荐身份的私钥不再以明文长期保存在本机偏好里。Android 走 Keystore 生成的 AES-GCM 密钥，Windows 走 DPAPI；两端都只把密文交给 Dart，`duanju/device` 通道新增 `protectSecret` / `unprotectSecret`，密文仍存回原来的 `recommend.v1.<用户>.identity.secret` 键，因此没有新依赖、新权限，也不改动备份与局域网同步格式（该命名空间本就排除在快照之外）。iOS 按平台优先级排在最后，本轮未接入，未接入时维持原有明文行为。
-- 迁移分两步，宁可慢一次也不丢身份：先按明文读取并写入密文，明文保留到**下一次启动仍能解出同一内容**才清除；已有密文却解不开时保留明文且不再反复重写，等平台恢复后由下次启动复核。密文在但本次解不开时**不新建身份**，只提示「本机推荐身份暂时无法读取」，避免新身份顶掉 relay 上已有记录的管理入口。
-- 兜底原则：通道未实现（`MissingPluginException`）、返回空、超时或密文编码损坏一律按「平台不支持」处理，退回原有明文路径并停止重试。加密不可用不等于身份不可用。
-- 验证：新增 `test/secret_store_test.dart`，覆盖平台不支持时退回明文、跨进程确认后才清除明文、解不开时保留记录标记、损坏密文不影响明文回退、换身份覆盖密文、删除用户清理密文与预载幂等；`test/recommendation_service_test.dart` 新增「身份记录解不开时不新建身份」用例，并在涉及的两个测试文件里改为先预载再挂载。Dart 侧仍用临时 WASM `dart_style` 按 `3.12.0` 解析与格式整理。本机没有 Dart/Flutter、Android 与 iOS 工具链，Kotlin / C++ 改动、Flutter 测试、Android 与 Windows 构建以及真机加解密都待 CI 与集中验收。
-- 已知限制：密文长期解不开时该用户只能浏览别人的榜单、无法发布，本轮只给提示，尚未提供显式的「重新生成身份」入口；Windows 的 DPAPI 只防离线或跨用户读取，不防同一用户下的进程读取。
-
-### 0.2.87：优化计划第一批（安全与发布）
-
-- 「在看」生产接收入口先检查消息大小、字段类型、十六进制长度、标签数量、订阅 ID 与最多 5 分钟未来时差，再在后台 isolate 核对事件 ID 和 BIP-340 签名；只有通过验证的事件才能交给推荐服务。每个 relay 验签串行排队，等待队列限制 512 条 / 8 MiB，超限断开并退避重连。EOSE 排在此前事件验证之后，旧订阅、重复 EOSE 和关闭后的迟到事件不能推进当前订阅；有效空列表仍支持撤回自己的发布。
-- 发布签名移到后台 isolate，使用会话代次和本地变更版本隔离迟到结果；签名或确认期间删除记录后会补发最新快照。重新挂载、切换用户或销毁服务后，旧 relay 回调与签名结果不再修改当前状态。本轮不更换身份、不迁移私钥；Android / iOS / Windows 安全存储迁移单独实施，避免丢失原发布身份。
-- Release 等待 Android、iOS 两个出包 job 结束，iOS 失败不阻塞成功的 Android 发布；checks 仍独立且不阻塞出包。新增 `scripts/publish_release.py`：附件使用提交号、运行编号与尝试次数区分构建，先上传全部新附件并核对 GitHub 返回的大小与 SHA-256，再更新发布信息和清理旧附件；失败保留旧下载，新 Release 在核对完成前保持草稿。滚动 `latest` 同步更新 tag，附件包含构建清单与校验和。
-- 本轮验证：使用已安装 Android NDK 自带 Python 执行发布流程模拟测试，10 项通过，覆盖中断、缺失摘要、名称冲突、重复执行、双 Android 版本与 iOS 产物收集；`git diff --check` 通过。新增 BIP-340 官方 0–14 号 32 字节消息测试向量、事件篡改与边界测试、本机 WebSocket relay 测试，以及发布期间修改记录 / 旧会话回调回归。本机未安装 Dart/Flutter，Dart 分析、测试及 Android/iOS 构建与设备行为均待 CI / 集中验收，未进行真实 relay 发布或站源媒体请求。
-
-格式补充：6 个变更 Dart 文件已使用临时目录内的轻量 WASM `dart_style` 格式器（语言版本 `3.12.0`）完成解析与格式整理；没有安装 Dart/Flutter SDK，也没有新增项目依赖。此检查不替代 Dart 类型分析、Flutter 测试或 CI 的格式复核。
-
-安全边界：榜单「N 人」实际按不同公钥身份去重，并非实名人数认证。验签可防止冒充别人的公钥，不能阻止同一人创建多个身份，也不能证明远端身份真的观看过视频；公钥与公开发布记录可被关联。下文旧版本「真实人数、不可刷」的描述不应作为安全保证。
-
-后续顺序：确认本轮修复在 CI 上转绿；大剧库持久化与播放器状态整理；站源契约；README 顶部状态收敛。本轮未实施这些后续项。
-
-0.2.86 按用户要求去掉 0.2.85 里自行添加、用户并未要求的「我发布了 N 部 · 多选删除」顶部提示行，多选删除只保留卡片菜单里的「管理我发布的记录」一个入口。
-
-0.2.85 按需求把「删除我发布的记录」改成可多选，不再只有逐条删除或一次性清空。点自己发布的卡片右下角按钮，菜单里的「管理我发布的记录」打开多选面板：面板列出自己发布的全部记录（剧名 + 站源 + 分类），可逐条勾选、可一键全选 / 取消全选，底部按钮实时显示「删除所选 N 部」，未勾选的记录继续保留在榜单里。服务层新增 `removeMany`，一次撤下多条并只对勾选的剧重置观看累计，因此被删的剧需要重新累计有效观看才会再次出现，未删的剧不受影响；删除后仍按原有单向时间序列发布，relay 上收到的是缩减后的列表（实测 3 部 → 删 2 部后发布 1 部），不会把未勾选的剧误删。空选择、空 ID 和不存在的 ID 直接返回，不触发多余发布。`remove` 保留为 `removeMany` 的单条调用。同一改动已同步到网页版两个项目的「在看」（面板内多选、全选、删除所选），详见各自 README。
-
-0.2.84 按需求定稿「在看」的界面与筛选，并让网页版共用同一套数据。底部导航改名并换图标：`发现` → `主页`（房子图标），`动态` → `在看`（播放圆标），`最近观看` → `历史`；三处导航（手机底部、桌面侧边栏、电视左侧）标题栏文字全部同步。`在看` 首次进入默认只显示红果，用户改过筛选（含主动改成全部）后不再被默认值覆盖，实现方式是在筛选状态里区分「没选过」和「选了全部」。站源筛选改为多选：`全部` 与具体站源互斥，点已选中的站源即取消，取消到最后一个等于回到全部；分类筛选重复点击同一个可取消。界面按截图效果收紧：只保留一个 `全部`、去掉 `我的`、去掉「已连接 N/M relay · N 部 · 我推荐过 N 部」那行状态文字（刷新移到标题栏），卡片角标改成海报右下角的纯人数胶囊「N 人」（自己的记录用主题色高亮），不再显示「推荐」字样。另外修掉设置页底部被系统虚拟按键遮挡的问题：`设置与备份` 列表底部补上 `MediaQuery` 的导航栏 / 手势条避让高度，「导入剧库」不再被压住。联调期留下的合成记录（`验证用剧名`，发布者公钥以 `20d0e5c7` 开头）用一次性密钥发布且私钥未留存，按 NIP-09 无法用其他密钥删除，relay 也确实拒绝跨密钥删除（实测 4 个 relay 均仍返回该事件），因此改为内置屏蔽该发布者并在操作菜单提供「恢复隐藏与屏蔽」。指向目标改为 `test/feeds_screen_test.dart` 新增底部避让断言、`test/theme_test.dart` 新增设置页避让断言，`test/recommendation_service_test.dart` 的站源多选用例改为按当前编译版本可用的站源取前两个，默认版与 `ALL_SOURCES=true` 版都能通过。本版已构建并安装到 Android 真机（`dist/android/zhenguojian-0.2.84+2090-arm64-v8a.apk`，versionCode 4090，覆盖安装后数据保留，冷启动无崩溃）。
-
-0.2.80 按需求把「用户推荐」做成内置动态榜单：底部导航新增「动态」，位于「发现」之后，用户看过的短剧自动进入榜单，不需要任何投票操作，用户可删除自己发布的记录，顶部可按站源和分类筛选。数据面参考同级 `../nostr` 与 `/Users/macbookpro/orca/workspaces/webhtv/feature-menu/webhome-devkit/examples/homepages/nostr.html` 的 kind `30078` 可替换事件方案，但**不复用旧项目的票数机制**：`d` 标签改为独立的 `zhenguo:app:recommend:v1`，内容为 `{"v":1,"i":[[站源, 剧集 ID, 剧名, 海报地址, 分类, 时间], …]}`，一个身份只有一条记录、按 `created_at` 覆盖，取消发布即发布空 `i`。榜单按**不同身份数**聚合（同一身份重复出现只算一次），因此「N 人推荐」等于真实看过这部剧的人数，热度只用 `at` 做时间排序，不存在可刷的票数。与旧项目一样设 10 分钟有效观看门槛，并对短剧补一条等效规则：连续看完 5 集同样计入。之所以不能只看单次进度，是因为播放器每 5 秒回报一次 `position`，单条记录永远到不了 10 分钟，因此新增 `lib/recommendation_store.dart` 按「剧集 + 上一采样位置」累计真实前进的秒数，并丢弃超过 20 秒的跳变，拖动进度条不会被算成观看。达到门槛后把自己的记录合并发布，relay 未连通时保存为待补发并定时重试，联网后自动补上，本机其余用户看不到「发布中」这类中间态，列表立即可见。
-
-推荐身份是本机自动生成的 32 字节私钥，首次进入「动态」时创建并保存，无需注册、登录或填写任何 relay 与密钥配置；事件用 `lib/nostr_crypto.dart` 纯 Dart 实现签（自实现的 secp256k1 与 BIP-340 Schnorr，不引入新的 pub 依赖，因为本机 Flutter 工具链此前无法写入 SDK 缓存，纯 Dart 才能在无 Flutter 环境里独立验证）。`lib/nostr_relay.dart` 连接 `../nostr` 使用的同一组公共 relay（`kotukonostr.onrender.com`、`nostr.spicyz.io`、`x.kojira.io`、`relay.wellorder.net`、`relay-sgp.signedbyme.com`），带订阅 500 条上限、向上回溯 4 轮、断线指数退避重连和发布确认。按用户的隐私边界，事件只含站源、剧集 ID、剧名、海报地址、分类与时间，不含观看进度、设备信息和用户标识；海报一律存站源原始地址，走本机既有的取图与权限检查，因此跨站源的动态海报可以正常显示，也不需要为推荐单独维护图床白名单。删除自己发布的记录会同时发布空记录并清除本机该剧的观看累计，只有再次达到门槛才会重新出现，不会点一次删一次又立刻回来。别人的记录提供「不看这条」，只写本机隐藏集合，不影响对方发布。榜单数据存在 `recommend.v1.<用户>.*` 独立命名空间，不进入 0.2.9 的本地快照与局域网同步协议，旧备份格式与同步文档保持不变；切换用户或删除用户后按 `pruneProfiles` 清理失效键。回归用例：`test/nostr_crypto_test.dart` 用参考实现的固定私钥、固定辅助随机数逐字节核对事件 ID 与 Schnorr 签名（同时覆盖 BIP-340 官方向量），`test/recommendation_models_test.dart` 覆盖记录编解码、未知站源 / 空剧名 / 无海报拒绝、超长截断、`d` 标签与 kind 过滤、脏记录逐条丢弃、同剧合并与隐藏，`test/recommendation_service_test.dart` 覆盖身份生成与复用、门槛不足不发布、10 分钟与 5 集两条达标路径、删除后重新计时、断线待补发和站源 / 分类筛选，`test/feeds_screen_test.dart` 覆盖底部入口、空榜提示与远端记录入榜。本轮集中执行 `flutter test`：新增 28 项全部通过，基线 155 项通过、22 项失败，两轮失败清单逐条一致（`interface_test`、`downloads_test`、`theme_test` 中依赖旧底部导航序号的用例已按新的六个导航项更新），新增失败为 0；`dart analyze lib test` 无 error 与 warning。真机 relay 连通性与电视端遥控焦点尚未验收，保留开发快照状态。
-
-0.2.79 修复榜单「很多都没有数据」和站源管理里黄果入口与其它站源风格不一致两个问题。榜单的根因不在原生核心：`RankingBoard.sourceForID` 把「榜单 ID → 站源」写死成六个站源的清单（红果、黄豆、黄果、剧果、野果、帝果），其余一律返回空串；而 `NativeRepository._call` 在发 `rankings` 请求前会用这个结果做一次授权（`_authorize(sourceForID(board))`），空串既不在 `SourceSite.values` 里也不属于任何用户权限，于是直接抛 `AppFailure('当前版本不包含此站源')`，请求根本没发到原生核心。原生核心的榜单接口本身是好的：实测 41 个榜单入口里 39 个能正常返回（芽果 50/24、猫果 66、饭果 3×10、观果 30、河果 3×10、星果 44、花果 36、牛果 5×12、伍果 5×10，红果/黄豆/黄果/剧果/野果同样有数据），只有帝果 1 个（`read: connection reset by peer`）和皮果 3 个（站点要求浏览器验证）受站点侧限制。受影响的正是 0.2.76 新加的 25 个短剧站源榜单，所以表现为「旧的能用、新加的全空」。现改为按榜单 ID 前缀解析站源（原生核心的榜单 ID 一律是「站源前缀-榜单名」），并保留 `huangguo → huangguoai` 别名归一化；同时 `NativeRepository` 记下 `rankingBoards` 返回的权威映射，授权优先用该映射，新增榜单无需再改 Dart 代码。站源管理里的黄果分组原本是唯一一个折叠 `ExpansionTile`（标题「黄果」，副标题「3 个入口 · N 部」，其余站源各自独立成卡片），与其它站源外观和交互都不一致，现已去掉该特例，黄果视频 / 黄果 AI / 黄果旧版与其它站源一样各自一张卡片，操作入口完全一致。另外给原生核心四处并发扇出加了 `recover`：黄果分类分页、帝果分类、星果按编号巡游、红果线路，以及网页版对应的站源分类扇出。这些 goroutine 之前没有兜底，一旦在后台 panic 会直接终止整个进程，表现为「点一下就退出应用」；现在与既有其它异常一样转成该操作失败并保留缓存。回归用例：新增 `test/ranking_models_test.dart` 覆盖原生核心全部 41 个榜单 ID 的站源解析（并逐条核对站源已登记在 `SourceSite.allValues`），在旧实现下会有 25 条解析为空串而失败；新增 `test/sources_screen_test.dart` 校验黄果三个入口各自成卡片、不再存在折叠分组，并验证点击黄果卡片及其「更新」按钮不产生异常。详见[APP 榜单空数据与黄果入口风格修复](docs/ranking-gate-and-huangguo-2026-10-01.md)。随后按用户“打包一下最新app，安装给我手机”的要求执行 `python3 scripts/build_android.py --all-sources --abi arm64-v8a --cn-mirrors`，Go 核心以 `allSources=true` 重新编译（`libduanju_core.so` 由上轮的 `2bc9ad76…` 变为 `6551b129a509ee2b93421d3e3a10527bb755b0ae575179263c920312c4caea93`，因为榜单解析与并发兜底改动落在原生核心），Flutter Release 与 `package_release.py` 通过，产出 `dist/android/zhenguojian-0.2.79+2085-arm64-v8a.apk`（31,711,716 字节，versionName `0.2.79`，versionCode `4085`）；并用 `adb install -r` 覆盖安装到 vivo V2453A（Android 15，安装前为 0.2.78+4084），设备内 APK 哈希与分发包一致，安装后版本、签名、包内原生核心哈希与启动状态均复核通过，证据见 `build/packages-0279/`。
-
-0.2.78 修复少数用户在手机上调音量会暂停播放。播放器把 `AppLifecycleState.inactive` 也当作“不在前台”，一旦收到该状态就置 `_playIntent = false` 并暂停，而且没有任何路径会自动续播，于是表现为按一次音量键就停下、需要手动点播放。在 Android 上 `inactive` 并不等于“切到后台”：Flutter 3.47.4 的 Android 嵌入层里，`Activity.onPause()` 发 `LifecycleChannel.appIsInactive()`（对应 Dart 的 `inactive`），真正的 `onStop()` 才发 `appIsPaused()`（对应 `hidden` / `paused`），窗口焦点则是另一条 `ViewFocusEvent` 通道（本项目未监听）。所以只要音量面板、系统对话框、通知栏或分屏等临时遮挡让 Activity 走到 `onPause`，播放就会停；而各厂商 ROM 的音量面板实现不同（有的只是叠加层不触发 `onPause`），这就是同一版本在部分机器上复现、自己测试却正常的原因，并非用户操作问题。现改为只在 `paused` / `hidden` 时暂停，`inactive` 视为仍然在屏（新增 `_lifecycleOnScreen`，同时用于画中画退出计时），符合 Android 官方“在 `onStop()` 而非 `onPause()` 释放媒体”的建议；`hidden` / `paused` 仍暂停并保持“回到前台不自动续播”的既有行为。`ScriptedPlayer` 新增 `pauses` 计数，并在 `test/player_screen_test.dart` 增加回归用例：`inactive` 不得触发暂停，`hidden` 必须暂停。网页版按 `document.hidden` 判断，音量变化不会触发，因此不存在同一问题，无需改动。同一版本补齐短剧站源的剧库收录深度，与网页版同步。原生的 `duanjuPaged`（`lib/models.dart`）此前漏了猫果、饭果、河果、星果，联网搜索分页判定随之漏判，已补齐；原生核心把 `Paged` 标记补到猫果、饭果、河果、星果，并新增 `BrowseAll` 标记（芽果设置任何 `theater_class_id` 都会把 `total` 压到 24，空分类反而能翻完全部目录）。`updateSource` 不再只读第 1 页第 1 个分类，改为经新增的 `loadSourceCatalogCategories` / `loadSourceCatalogCategory` 按 `nativeCatalogKey(source, category)` 遍历全部分类、各自续载去重；分类多于一个时用新增的 `deferCatalogSave` 把落盘合并到最后一次，避免每页重写整个 `catalogs.json`（`catalogs.json` 上限 32 MB）。分页参数一并纠正：饭果用 `pageIndex` 并以 `result.hasMore` 判断到底，猫果用响应里的 `data.next_id` 真实游标，星果 `pageSize` 按 50 请求并按该值判断到底。牛果的分类参数是 `type_id` 而不是 `class`，且编号是短剧 5、电影 1、电视剧 2、动漫 4、综艺 3，旧映射全部错位，导致目录只有 12 部、5 个榜单全部 0 条。星果改为按 `resourceId` 巡游（`xingguoWalkCategory`，每页并发探测 40 个编号并去重、可断点续载、空批次也继续前进），实测编号 1–240 得 99 部，一次更新推进 400 个编号。饭果静态分类由 7 个关键词扩到 36 个。站源任务超时由 3 分钟提到 12 分钟。详见[短剧站源收录深度修复](docs/duanju-catalog-depth-2026-10-01.md)。随后按用户“打包一下最新app，安装给我手机”的要求执行 `python3 scripts/build_android.py --all-sources --abi arm64-v8a --cn-mirrors`，Go 核心以 `allSources=true` 重新编译（`libduanju_core.so` 由上轮的 `6eb650c1…` 变为 `2bc9ad766d8ab3a9043da97f2592c6267446afb9306064f84a664f3fd60cf595`，因为收录深度改动落在原生核心），Flutter Release 与 `package_release.py` 通过，产出 `dist/android/zhenguojian-0.2.78+2084-arm64-v8a.apk`（31,710,124 字节，versionName `0.2.78`，versionCode `4084`）；并用 `adb install -r` 覆盖安装到 vivo V2453A（Android 15，安装前为 0.2.77+4083），设备内 APK 哈希与分发包一致，安装后版本、签名、包内原生核心哈希与启动状态均复核通过，证据见 `build/packages-0278/`。
-
-0.2.77 剧库导出改为标准 XZ 压缩包，并让 APP 的剧库导入导出不再需要先登录。导出文件从 `剧库-YYYY-MM-DD.json` 变成 `剧库-YYYY-MM-DD.xz`，用纯 Go 的 `github.com/ulikunitz/xz` 在原生核心内压缩（Dart 的 `archive` 包虽然也有 `XZEncoder`，但它只写 LZMA2 未压缩块，产出比原文还大，所以没有采用），压缩结果经 base64 过桥交给 Flutter 写盘；实测 2000 条剧库由 1017 KB 压到 24 KB，约 42 倍，且系统 `xz -dc` 能直接解开，与网页版产物互通。导入不再依赖扩展名或 MIME，而是看文件头：前 6 字节为 `FD 37 7A 58 5A 00` 走 XZ 解压，否则按 JSON 解析，所以旧版导出的 `.json` 可以直接导入，不需要重新导出；解压流用 `LimitReader` 卡在 32 MB，避免压缩炸弹。登录方面：网页版把入口放在管理员设置里、需要先登录，APP 是本机应用、剧库文件属于本机用户，因此把 `libraryExport` / `libraryImport` / `libraryExportXZ` / `libraryImportXZ` 加入桥接层的 `unlockedActions`，不再被“请先解锁当前用户”拦截，其余动作的锁屏限制不变；解锁页在密码框下方新增“剧库导入导出”区，提供“导出剧库”“导入剧库”两个按钮。导入导出逻辑抽到 `lib/library_transfer_actions.dart`，解锁页与设置页共用同一份实现，避免两处行为漂移。随后按用户“打包一下最新app，安装给我手机”的要求执行 `python3 scripts/build_android.py --all-sources --abi arm64-v8a --cn-mirrors`，产出 `dist/android/zhenguojian-0.2.77+2083-arm64-v8a.apk`（31,667,340 字节，versionName `0.2.77`，versionCode `4083`），并用 `adb install -r` 覆盖安装到 vivo V2453A（Android 15，已装 0.2.73+4079），安装后版本、签名与启动状态均复核通过，证据见 `build/packages-0277/`。
-
-0.2.76 补齐全部短剧站源的榜单，并修好黄果 AI 与站源管理两处问题。榜单：为芽果、猫果、饭果、观果、河果、星果、花果、牛果、皮果、伍果补 25 个榜单入口，芽果用站点官方一级榜单接口（`/cloud/v1/first_level_ranking/detail?id=1`），其余按对应分类的源站返回顺序编号，不抓取或展示源站图片；原先 `fetchCatalogRankingPage` 的 `switch` 只列为剧果、野果、帝果，短剧站源会静默返回空列表，本轮一并修好。黄果 AI：`https://huangguoai.ai/` 只是导航索引发布页，对 `/api/videos/category/…` 和 `/video/{id}/` 一律返回 404，真正的接口在发布页 `data-url` 卡片指向的内容线路（本轮为 `rurhvbhx.cc` 域名族）。原实现把内容域名族写死成 `kmexvuoz.cc`、`hwqlgzvsk.cc`，站点换线后全部被拒、回退到导航页，于是整站 404。现改为从 `data-url` 动态识别任意合法内容主机并记入本次运行的线路表，已知域名族继续兜底，导航页、社交、统计与 CDN 域名继续拒绝。站源管理：卡片在“未完成”下方出现的整屏纯灰块是 Flutter 发布版组件构建失败的默认兜底外观（`RenderErrorBox`，背景 `Color(0xF0C0C0C0)`，无文字，`_kMaxHeight` 为 100000.0，在无限高约束下会撑满整屏；实测列表子项抛异常时尺寸为 `Size(390.0, 100000.0)`）。新增 `lib/error_boundary.dart` 把 `ErrorWidget.builder` 换成有界错误卡片（上限 320，带图标、重试和可滚动异常文本），站源卡片的错误文本改用有界滚动区域（上限 160），原生侧“未完成”错误与检测步骤信息统一截断到 600 字符。另按用户要求下线长期不可用的网果、发果（站源、别名、分类与前端入口一并移除，短剧站源注册数由 12 降为 10），并修正伍果的两处漂移：补齐 8 个静态分类，目录地址改为与多站源版一致的 `/index.php/vod/search/class/<分类>/page/<页码>.html`。原生核心 `provider_rankings_test.go` 补上多站源版已有的 `page == 0` 兜底，`TestRankingCacheAndStaleRecovery` 由失败转为通过；`test/app_build_test.dart` 的站源数量断言改为跟随 `SourceSite.knownValues`，不再写死 8。
-
-0.2.74 修复少数用户看短剧约 40 秒后自动息屏：Android 生产路径使用原生 `SurfaceView` 直出（`android_video_surface.dart` + Kotlin `VideoSurfaceHost`），此时 media_kit_video 的 `Video` 组件根本不挂载，而项目里没有任何一处调用 `WakelockPlus`，`MainActivity` 也没有 `FLAG_KEEP_SCREEN_ON`，所以播放期间屏幕完全交给系统「自动锁定」超时；只有原生 Surface 创建失败、回退到纹理输出时才会挂载 `Video` 组件而意外获得常亮，因此只有把锁屏时间调短或未被厂商启发式豁免的用户会反馈，锁屏 15 / 30 / 60 秒即对应“40 秒左右”的熄屏。现在新增 `lib/screen_awake.dart` 统一持有带引用计数的常亮开关，`PlayerScreen` 在前台、有播放意图、无错误且播放器确实处于播放状态时申请常亮，暂停、切后台、出错和页面销毁时释放；纹理路径的 `Video` 显式传入 `wakelock: false`，由一个状态机单独决定，避免两个全局开关互相关闭。`wakelock_plus` 由传递依赖改为直接依赖（Android / iOS 走原生插件，Windows / macOS / Linux 走 Dart 插件，无需改动平台注册代码）。随后按“打包app”的要求完成全站源 ARM64 Release 构建，产出 `dist/android/zhenguojian-0.2.74+2080-arm64-v8a.apk`，包检查与包内 `ScreenAwake` 检出通过；构建时无 ADB 连接，未安装设备，真机播放验收仍待集中验证。
-
-0.2.73 修复红果部分剧集无法播放：本机播放代理转发“没有文件扩展名的媒体地址”时，会先把响应读满 4 MB 用于判断是否为播放列表，读满即判为失败并返回 502「读取媒体失败，请重试」。红果 App 取流地址正是以 `/` 结尾、无扩展名的路径，因此同一部剧里体积不超过 4 MB 的集可以播放，超过 4 MB 的集在 10 条线路全部返回 502 后落到「暂时无法播放 / 自动恢复未成功」。现在嗅探上限降到 256 KB，只有读到上限且前缀不是 `#EXTM3U` 才按媒体流处理：先写出已缓冲前缀，再继续复制剩余响应，`Content-Length`、`Content-Range`、`ETag` 等仍按上游转发；确为播放列表的响应才在 4 MB 上限内完整读取并改写。以截图中的《我都元婴期了，你跟我说开学第二季》（911 集）抽样 25 集验证：修复前 17 集返回 502、8 集可播放，修复后 24 集可播放（19.0 MB 与 7.9 MB 的集在无 Range 和开区间 Range 下均返回 200 / 206），剩 1 集为上游单次瞬时失败、单独重试 3 次均成功。新增 `native/core/app_stream_test.go` 覆盖大文件无扩展名媒体、Range 请求和无扩展名播放列表改写；本轮只改源码并运行定向 Go 测试，未重新打包或安装设备。
-
-0.2.72 修复黄果 AI 详情页集数对不上：站点使用 `/video/{id}/ep-{n}/` 分集地址，旧解析只识别无连字符的集数键，导致详情只保留 `epPlaySrcs` 临时返回的少量集数。现在按当前剧集 ID 合并完整分集链接与播放地址，避免推荐剧污染；已补充 12 集真实链接形态的解析回归。
-
-0.2.65 优化非全屏播放器控制层：首次播放、手动切集或呼出按钮后，正常播放且无操作 3 秒即以 180 毫秒淡出中央上一集 / 播放暂停 / 下一集及其余控制层；轻点画面切换控制层，双击或中央按钮控制播放 / 暂停。暂停、缓冲、拖动进度、长按倍速 / 快进和菜单操作期间停止隐藏计时，恢复后重新计时，修复计时恰好遇到缓冲而跳过隐藏后没有重启的问题。全屏仍使用 4 秒，自动连播沿用不主动呼出按钮的策略。参考 [Video.js 默认 2000 毫秒无操作超时](https://github.com/videojs/video.js/blob/main/src/js/player.js) 与 [Android Media3 的可配置超时和暂停保留控制层机制](https://github.com/androidx/media/blob/release/libraries/ui/src/main/java/androidx/media3/ui/PlayerView.java)，本项目非全屏采用 3 秒。源码格式整理与同步后，按用户追加授权完成全站源 ARM64 Release 构建和覆盖安装；ADB 返回成功后手机断开连接，未完成设备端版本 / 哈希复核，未执行静态分析、自动化或播放行为验证。
-
-0.2.64 优化海报右上角的三点菜单：首页、追剧与历史共用的卡片菜单移除常驻黑色圆底，改用透明背景、白色图标和轻微阴影；按压、悬停或聚焦时提供淡色反馈，保留 48×48 dp 点击区域和菜单提示。按用户结束测试的要求，本轮只调整源码、整理格式并执行收尾同步，未重新打包或进行设备验证；手机已安装版本仍为 0.2.63。
-
-0.2.63 将应用图标替换为用户提供的绿底金色果形播放图：原始图片保存在 `assets/branding/app_icon.png`，`python3 scripts/generate_brand_assets.py` 统一生成 Android 五档图标、电视横幅、Windows 七档 ICO 与 iOS 无透明通道图标。手机播放器准备与缓冲改用浅色静态文字，取消橙色转圈，加载背景与控制层统一叠放；准备期间只保留返回 / 旋转操作，播放就绪后再显示播放按钮与底部工具，避免文字与按钮重叠。中央播放 / 暂停按钮改为 25% 黑色底与 80% 白色图标。此前顶部灰边、入场位移、推荐静默刷新及原生核心打包修复一并保留；实际验证范围见“当前检查与平台状态”。
-
-0.2.62 修复 0.2.61 发布 APK 混入旧原生核心导致无法启动的问题：全站源版通过完整 Android 构建脚本同步编译 Go 核心与 Flutter；原生构建生成包含站源开关、平台、架构和 SHA-256 的记录，Android Gradle 在打包前校验，分发脚本再次核对 APK 内核心字节，缺失记录、配置不同或核心被替换时均拒绝出包。新增真实启动入口的设备验证用例，避免合成业务数据绕过原生初始化检查。0.2.61 的界面与缓存修改保留；此前发出的 0.2.61 APK 无效，不能作为已验收安装包。
-
-0.2.61 修复播放页顶部与推荐刷新：手机视频背景延伸到状态栏后方，顶部使用浅色系统图标，返回与旋转按钮单独避让状态栏；播放路由取消整页位移及黑幕淡入，竖屏视频区域保持固定高度，不随媒体尺寸返回而推移下方 Tab；播放页不随搜索键盘收起重新压缩布局，并保留底部系统导航栏间距。播放器推荐移除加载横线和转圈，后台流式结果仍可直接显示；同站源与关键词的搜索缓存有效期为 20 分钟，有效数据与成功空结果均直接复用，过期后保留已有内容静默更新；合并相同关键词的进行中请求，更新失败保留旧数据并短暂退避。验证结果见“当前检查与平台状态”；其他平台与功能继续保留开发快照状态。
-
-0.2.60 将 Android、Windows、iOS 应用图标替换为用户提供的金色真果播放图标，原始 PNG 保存在 `assets/branding/app_icon.png`；Android 桌面入口已切换到各密度 mipmap，Windows ICO 包含 16–256 像素七档尺寸，iOS 按现有 AppIcon 目录生成无透明通道 PNG。仅完成图标资源尺寸与格式核对，未重新构建或进行设备视觉验收，属于开发快照。本轮修复真机反馈的三项问题：推荐 Tab 与首页搜索一样改为流式追加显示（设备实测 29.3 秒的搜索在第 3.0 秒即可显示 18 条，不再进入后长时间只有转圈）；修复「排序与筛选」等底部弹层「应用」按钮与系统虚拟导航栏重叠——根因是 `showModalBottomSheet` 的 `useSafeArea` 只生成 `SafeArea(bottom: false)`、本身不处理底部，原代码只算了软键盘高度；并核对站源管理等其余底部区域已由 `SafeArea` 正确避让。此前沿「四步播放性能优化」继续推进，并修复真机反馈的体验问题：进入播放界面前会透出上一路由的画面，根因是 Material 3 页面转场会淡入新页面，过渡期间整屏（含视频区黑底）都半透明，现改用不起淡入的自定义 `playerRoute`，加载遮罩也由 78% 半透明改为纯黑；播放器「推荐」Tab 完整重做（Tab 顺序调整为选集 / 简介 / 推荐 / 下载，复用此前搜索结果并做相关性校验，避免串成别的剧，改为卡片式且剧名不省略）；搜索改为流式追加显示，不再等 15–25 秒才出首批结果；榜单条目补齐去中间页改造的遗漏入口，改为直达播放；红果同系列补季修正两处真实缺陷，实测同一关键词结果数与季数覆盖均提升。此外修复后台切回黑屏（`surfaceDestroyed` 未通知 mpv 释放已销毁的 `ANativeWindow`），并更正 README 中此前关于 MPV-3「已在真机验证」的过度表述——先前依据是 mpv 属性观测，而该方式在零像素呈现时同样会上报，现改用画面像素判据（色数与 `diffbbox` 变化）。此前按 README 既定顺序落地播放性能改造的前两步（MPV-1 共享播放状态减负、MPV-2 进度存储拆分），并实施 MPV-3：mpv 的 Android VO 把 `--wid` 当作 Java `Surface` 全局引用（`video/out/android_common.c:47-49` 的 `ANativeWindow_fromSurface`），而 `media_kit_video 2.0.1` 没有 SurfaceView / PlatformView 实现，故独立视频宿主由本项目自建并经 `MediaKitAndroidHelper.newGlobalObjectRef` 取引用，已在 Android 真机确认视频走独立 Surface 且不再经 Flutter 纹理输入（超 16 ms 的 build 由 2.0% 降至 0.37%）；MPV-4 已完成设备评估，同素材同实例 A/B 实测 `mediacodec_embed` 在三种 hwdec 组合及 `vo=mediacodec` 下播放位置均不推进，故本机不启用直出、保留 `vo=gpu`，详见“mpv 播放性能分析与改造方案”。同时修正 README 站源表中河果与星果搜索的过期描述（两者均已实现在线搜索）。上一轮补齐河果与星果的在线搜索：河果搜索不走页面 HTML，真实接口是 `POST /seo/video/6007`（JSON 正文 `{"sourceType":1,"keyword":…,"index":…}`，响应在 `data.bookList`，带 `isMore` / `totalSize` 可供翻页），参数与路径取自站点 Next.js 的 `search` 分包，现已实测返回结果。星果搜索接口为 `GET /novel-api/basedata/book/searchBook`，关键词参数名是 `key`（不是 `keyword` / `searchKey`，用错会返回 `参数错误`），响应在 `data.datalist` 且支持 `pageNum` 翻页。排查过程中确认 `safe filter error` 的 `-6001`（GET）与 `-4003`（POST）都只是网关拦截，同一路径下 `-4005` 才代表路由不存在、`-4002` 代表路由存在但缺少参数，按这个判据枚举才定位到真实接口。同时修掉猫果搜索结果标题带高亮标记的问题：上游在 `playlet_name` 里回填 `<font color='#ff4242'>都</font>` 一类片段，现统一去标签并还原实体，标题恢复为「都市无上仙尊（都市之无双仙尊）」。十二个站源里除皮果受 Cloudflare 校验限制外，其余十一个均已实测可搜索。本轮补齐弹幕表情：红果弹幕文本把 `[笑哭]` 一类表情代码直接内嵌在正文字段里，接口既没有独立的表情字段，也没有可取的表情清单接口，实测四个候选路径均返回 404，因此在 Go 原生核心按内置对照表转换后再交给界面；未收录的代码原样保留，不会误显示成其他表情。同时修正截断逻辑，在变体选择符和零宽连接符之前回退，避免组合表情被截成缺字符号。同一批修改已同步到 `../短剧库` 和 `../果果剧库`；十二个短剧站源也已移植到多站源版 `../短剧库`，红果专用版 `../果果剧库` 按该项目的来源限制只接收弹幕表情修改。本轮按用户指定目录接入十二个短剧站源（芽果、猫果、饭果、观果、河果、星果、花果、牛果、网果、发果、皮果、伍果），全部在 Go 原生核心内请求和解析，并就文本接口做了探测；详见“十二个新增短剧站源”。其中网果、发果因站点长期不可用已于 0.2.76 下线。上一轮新增管理员“启动时需要登录”开关：设置管理员密码后仍默认保持启动登录，管理员可在用户管理中关闭；关闭后保留密码保护，只在切换用户或手动锁定时验证。上一轮核对剧果、野果、帝果的目录分页、榜单和播放解析链路：多站源更新默认批量 50 页，野果目录 / 搜索 / 播放使用 POST，剧果保留 CloudFront 签名 Cookie 到播放列表、分片、预加载和下载，帝果 vplayer 签名失败不再静默回退到未签名地址。野果运行时固定优先使用当前线路 `https://analyze.buxefaex.cc/`，通过 `https://ygdj7.com/` 发现新线路；旧域名仅保留缓存与身份兼容识别，不再主动作为接口回退地址；首页和推荐卡片点击后在当前页读取详情，成功后直接进入播放器，避免“正在进入播放”的中间页闪现；站源管理列表底部避让系统虚拟导航栏，避免最后一组站源被遮挡；播放页轻量 Tab 与紧凑选集网格之间补充少量间距，避免按钮贴得过紧；修复野果线路发现正则在原生核心初始化时触发 Go panic 导致 Android 启动闪退的问题。
+- [0.2.86 按用户要求去掉 0.2.85 里自行添加、用户并未要求的「我发布了 N 部 · 多选删除](changelog/0.2.86.md)
+- [0.2.85 按需求把「删除我发布的记录」改成可多选，不再只有逐条删除或一次性清空](changelog/0.2.85.md)
+- [0.2.84 按需求定稿「在看」的界面与筛选，并让网页版共用同一套数据](changelog/0.2.84.md)
+- [0.2.80 按需求把「用户推荐」做成内置动态榜单：底部导航新增「动态」，位于「发现」之后，用户看过的](changelog/0.2.80.md)
+- [0.2.79 修复榜单「很多都没有数据」和站源管理里黄果入口与其它站源风格不一致两个问题](changelog/0.2.79.md)
+- [0.2.78 修复少数用户在手机上调音量会暂停播放](changelog/0.2.78.md)
+- [0.2.77 剧库导出改为标准 XZ 压缩包，并让 APP 的剧库导入导出不再需要先登录](changelog/0.2.77.md)
+- [0.2.76 补齐全部短剧站源的榜单，并修好黄果 AI 与站源管理两处问题](changelog/0.2.76.md)
+- [0.2.74 修复少数用户看短剧约 40 秒后自动息屏：Android 生产路径使用原生 `Surfa](changelog/0.2.74.md)
+- [0.2.73 修复红果部分剧集无法播放：本机播放代理转发“没有文件扩展名的媒体地址”时，会先把响应读满](changelog/0.2.73.md)
+- [0.2.72 修复黄果 AI 详情页集数对不上：站点使用 `/video/{id}/ep-{n}/`](changelog/0.2.72.md)
+- [0.2.65 优化非全屏播放器控制层：首次播放、手动切集或呼出按钮后，正常播放且无操作 3 秒即以 1](changelog/0.2.65.md)
+- [0.2.64 优化海报右上角的三点菜单：首页、追剧与历史共用的卡片菜单移除常驻黑色圆底，改用透明背景、](changelog/0.2.64.md)
+- [0.2.63 将应用图标替换为用户提供的绿底金色果形播放图：原始图片保存在 `assets/brand](changelog/0.2.63.md)
+- [0.2.62 修复 0.2.61 发布 APK 混入旧原生核心导致无法启动的问题：全站源版通过完整 A](changelog/0.2.62.md)
+- [0.2.61 修复播放页顶部与推荐刷新：手机视频背景延伸到状态栏后方，顶部使用浅色系统图标，返回与旋转](changelog/0.2.61.md)
+- [0.2.60 将 Android、Windows、iOS 应用图标替换为用户提供的金色真果播放图标，原](changelog/0.2.60.md)
 
 按用户 2026-09-21 的要求，继续暂停整体验证。2026-09-28 曾按授权集中检查原生初始化、播放页顶部、入场布局、加载提示、播放按钮、图标和推荐缓存，并通过 ADB 使用合成数据与禁用远程图片的版本进行定向设备验证；随后按用户要求结束测试。0.2.65 按追加授权仅完成构建、包检查与覆盖安装，不代表恢复功能回归。榜单、画质增强、画中画、多站源真实播放以及 Windows、Android TV、iOS 等未覆盖的行为仍保留未验证快照状态。历史版本的检查记录不能作为本轮新增功能的验收结论。
 
@@ -1478,238 +1258,5 @@ unzip ../真果·鉴-YYYYMMDDHHMM.zip -d ../restore
 
 ### 当前检查与平台状态
 
-0.2.79+85 按用户“打包一下最新app，安装给我手机”完成全站源 ARM64 Release 构建与真机覆盖安装，源码为 0.2.79 的未发布改动（榜单空数据、黄果入口风格、原生核心并发兜底），本轮未再改业务代码。
+历史逐版本检查记录已拆至 [changelog/history.md](changelog/history.md)。
 
-- 构建：`python3 scripts/build_android.py --all-sources --abi arm64-v8a --cn-mirrors`，Go 核心以 `allSources=true` 重新编译（`libduanju_core.so` 由上轮的 `2bc9ad76…` 变为 `6551b129a509ee2b93421d3e3a10527bb755b0ae575179263c920312c4caea93`，因为榜单解析与并发 `recover` 改动落在原生核心），`flutter pub get --enforce-lockfile`、Flutter Release 与 `package_release.py` 通过，产出 `dist/android/zhenguojian-0.2.79+2085-arm64-v8a.apk`（31,711,716 字节）。Gradle `assembleRelease` 用时 428.4 秒，仅出现既有 KGP 与 SDK XML 版本警告。
-- 包检查：`aapt2 dump badging` 得到包名 `com.duanju.duanju_app`、应用名「真果鉴」、versionName `0.2.79`、versionCode `4085`、`native-code: arm64-v8a`、minSdk 26 / targetSdk 36；`apksigner verify --print-certs` 证书 SHA-256 `dafec6763f52df367b8b211ed0f0073f2a3ae7061173df4ebdc68996c56a7670`，与历史包同签名；`zipfile.testzip()` 无 CRC 错误；APK 内 `lib/arm64-v8a/libduanju_core.so` 与 `libduanju_core.build.json` 的 SHA-256 相同（`6551b129…`）且记录 `allSources=true`；必需原生库 `libduanju_core.so` / `libflutter.so` / `libapp.so` / `libmpv.so` / `libffmpegkit.so` 均在包内；包内 `libapp.so` 检出本轮新增的 `rankingBoards` 与既有 `sourceForID`、`ScreenAwake`、`duanjuPaged` 字符串，确认榜单授权映射修复已进包；APK SHA-256 为 `ce8877bf0fab95a9a980475533dffc919db3aa7a23f38746b8de20967e4a3c0c`。
-- 安装：设备 vivo V2453A（`10CF6H1D2L0009S`，Android 15，arm64-v8a），安装前为 `0.2.78` / versionCode `4084`；`adb install -r` 返回 `Success`（Streamed Install，覆盖升级、未卸载），安装后 `versionName 0.2.79` / `versionCode 4085` / `lastUpdateTime 2026-10-01 17:50:06`，`firstInstallTime` 保持 2026-09-24 02:08:22，确认数据保留；设备内 `base.apk` 的 SHA-256 与分发包一致（`ce8877bf…`）。启动后 `pidof` 非空、`topResumedActivity` 为 `.MainActivity`，`adb logcat` 内 `FATAL EXCEPTION` 计数为 0，新原生核心能正常加载。
-- 证据：`build/packages-0279/` 下的 `release-all-sources-arm64.log`、`apk-verification.json`、`install.log`、`device-installation.json`、`logcat-launch.txt`。
-- 边界：只构建并安装 Android 全站源 ARM64 包，未构建 Windows / iOS / TV 包；未执行静态分析、自动化测试和真实站源播放回归，41 个榜单入口是否全部出数据、黄果三入口点击不退出、短剧站源分类收录与剧库 XZ 导入导出均待集中验证，安装成功不等于功能验收通过。
-
-0.2.78+84 按用户“打包一下最新app，安装给我手机”完成全站源 ARM64 Release 构建与真机覆盖安装，源码为此前两条未发布改动（手机音量键导致暂停、短剧站源收录深度），本轮未再改业务代码。
-
-- 构建：`python3 scripts/build_android.py --all-sources --abi arm64-v8a --cn-mirrors`，Go 核心以 `allSources=true` 重新编译（`libduanju_core.so` 由上轮的 `6eb650c1…` 变为 `2bc9ad766d8ab3a9043da97f2592c6267446afb9306064f84a664f3fd60cf595`，因为收录深度改动落在原生核心），`flutter pub get --enforce-lockfile`、Flutter Release 与 `package_release.py` 通过，产出 `dist/android/zhenguojian-0.2.78+2084-arm64-v8a.apk`（31,710,124 字节）。Gradle `assembleRelease` 用时 362.4 秒，仅出现既有 KGP 与 SDK XML 版本警告。构建前把 `pubspec.yaml` 由 `0.2.77+2083` 递增为 `0.2.78+2084`。
-- 包检查：`aapt2 dump badging` 得到包名 `com.duanju.duanju_app`、应用名「真果鉴」、versionName `0.2.78`、versionCode `4084`、`native-code: arm64-v8a`、minSdk 26 / targetSdk 36；`apksigner verify --print-certs` 通过 APK Signature Scheme v2，证书 SHA-256 `dafec6763f52df367b8b211ed0f0073f2a3ae7061173df4ebdc68996c56a7670`，与历史包同签名；`zipfile.testzip()` 无 CRC 错误；APK 内 `lib/arm64-v8a/libduanju_core.so`、`jniLibs` 库文件与 `libduanju_core.build.json` 三者 SHA-256 相同（`2bc9ad76…`）且记录 `allSources=true`；必需原生库 `libduanju_core.so` / `libflutter.so` / `libapp.so` / `libmpv.so` / `libffmpegkit.so` 均在包内；包内 `libapp.so` 含 `ScreenAwake` 与 `duanjuPaged` 字符串，确认常亮修复与站源分页补齐都在包内；APK SHA-256 为 `972c8360327e6f64202e2b12bf7b756df019d763f4cb44ada0e116bca0a9691a`。
-- 安装：设备 vivo V2453A（`10CF6H1D2L0009S`，Android 15，arm64-v8a），安装前为 `0.2.77` / versionCode `4083`；`adb install -r` 返回 `Success`（Streamed Install，覆盖升级、未卸载），安装后 `versionName 0.2.78` / `versionCode 4084` / `lastUpdateTime 2026-10-01 16:06:48`，`firstInstallTime` 保持 2026-09-24 02:08:22，确认数据保留；设备内 `base.apk` 的 SHA-256 与分发包一致。`adb shell am start -n com.duanju.duanju_app/.MainActivity` 后进程 `pidof` 非空、`topResumedActivity` 为 `.MainActivity`，`adb logcat` 800 行内 `FATAL EXCEPTION` 计数为 0，说明新原生核心能正常加载、未复现 0.2.61 的启动即崩。
-- 证据：`build/packages-0278/` 下的 `release-all-sources-arm64.log`、`apk-verification.json`、`install.log`、`device-installation.json`。
-- 边界：只构建并安装 Android 全站源 ARM64 包，未构建 Windows / iOS / TV 包；未执行静态分析、自动化测试和真实站源播放回归，音量键不暂停、短剧站源分类收录（猫果 / 饭果 / 河果 / 星果 / 牛果等）、剧库 XZ 导入导出均待集中验证，安装成功不等于功能验收通过。
-
-0.2.77+83 按用户“打包一下最新app，安装给我手机”完成全站源 ARM64 Release 构建与真机覆盖安装，本轮不改源码。
-
-- 构建：`python3 scripts/build_android.py --all-sources --abi arm64-v8a --cn-mirrors`，Go 核心重新以 `allSources=true` 编译（`libduanju_core.so` 由上轮的 `67706618…` 变为 `6eb650c1e9ed92004a992307b1eec646813a8f7b8dcf297bff5ebd5a8cc25c2b`，因为 0.2.75～0.2.77 的剧库 XZ 导入导出改动落在原生核心），Flutter Release 与 `package_release.py` 通过，产出 `dist/android/zhenguojian-0.2.77+2083-arm64-v8a.apk`（31,667,340 字节）。Gradle `assembleRelease` 用时 264.6 秒，仅出现既有 KGP 与 SDK XML 版本警告。
-- 包检查：`aapt2 dump badging` 得到包名 `com.duanju.duanju_app`、应用名「真果鉴」、versionName `0.2.77`、versionCode `4083`、`native-code: arm64-v8a`、minSdk 26 / targetSdk 36；`apksigner verify --print-certs` 通过 APK Signature Scheme v2，证书 SHA-256 `dafec6763f52df367b8b211ed0f0073f2a3ae7061173df4ebdc68996c56a7670`，与历史包同签名；`zipfile.testzip()` 无 CRC 错误；包内 `lib/arm64-v8a/libduanju_core.so`、`jniLibs` 库文件与 `libduanju_core.build.json` 三者 SHA-256 相同且记录 `allSources=true`；包内 `libapp.so` 含 `ScreenAwake` 与 wakelock 字符串。
-- 安装：设备 vivo V2453A（`10CF6H1D2L0009S`，Android 15，arm64-v8a），安装前为 `0.2.73` / versionCode `4079`；`adb install -r` 返回 `Success`，安装后 `versionName 0.2.77` / `versionCode 4083` / `lastUpdateTime 2026-10-01 09:38:08`，`firstInstallTime` 保持 2026-09-24 02:08:22，确认覆盖升级且未清除数据。`adb shell am start -n com.duanju.duanju_app/.MainActivity` 后进程 `pidof` 非空、`topResumedActivity` 为 `.MainActivity`，`adb logcat` 400 行内无 `FATAL EXCEPTION`，说明新原生核心能正常加载、未复现 0.2.61 的启动即崩。
-- 证据：`build/packages-0277/` 下的 `release-all-sources-arm64.log`、`apk-verification.json`、`device-installation.json`。
-- 边界：只构建并安装 Android 全站源 ARM64 包，未构建 Windows / iOS / TV 包；未执行静态分析、自动化测试和真实站源播放回归，播放、弹幕、下载、剧库导入导出（0.2.77 新增）均待集中验证，安装成功不等于功能验收通过。
-
-0.2.74+80 定位并修复“少数用户播放约 40 秒后息屏”，只改动 Dart 侧与依赖声明，未触碰 Go 核心、原生工程和站源链路。
-
-- 根因：media_kit_video 只在自身 `Video` 组件的 `initState` / `dispose` 里通过 `WakelockPlus` 申请和释放屏幕常亮（`media_kit_video-2.0.1/lib/src/video/video_texture.dart`），而 Android 生产路径在 `lib/player_screen.dart` 里 `_surfaceOutput` 为真时既不创建 `VideoController` 也不挂载 `Video`，改用 `lib/android_video_surface.dart` 的 `PlatformViewLink` 加 Kotlin `VideoSurfaceHost` 的裸 `SurfaceView` 直出。项目里此前没有任何一处直接调用 `WakelockPlus`，`android/app/src/main/AndroidManifest.xml` 的 `WAKE_LOCK` 权限只管 CPU 唤醒，`MainActivity` 没有 `FLAG_KEEP_SCREEN_ON`，`VideoSurfaceHost.kt` 的 `SurfaceView` 也没有 `keepScreenOn`。因此播放期间是否熄屏完全取决于系统「自动锁定」时间与厂商全屏视频启发式。
-- 现象对应：锁屏时间设为 2 分钟以上、勾选“充电时屏幕不休眠”，或单集短且用户频繁点选集 / 拖进度的设备无感；锁屏 15 / 30 / 60 秒的设备在最后一次触摸后熄灭，先变暗再熄屏，与反馈中的“40 秒左右”一致。Android TV 没有锁屏超时，Windows 纹理路径由 media_kit_video 兜住，所以反馈集中在部分 Android 手机。
-- 反证：原生 Surface 创建失败时 `_fallbackToTextureOutput` 会创建 `VideoController` 并挂载 `Video` 组件，那条路反而带常亮；覆盖与需求正好相反，与反馈零散的现象一致。
-- 修复：新增 `lib/screen_awake.dart`，以静态引用计数统一持有常亮状态，避免多个播放页先后释放时误关；平台调用失败只记录日志，不抛给播放链路。`lib/player_screen.dart` 在 `_syncPlayback` 与 `_applyLifecycleVisibility` 中按 `!_closed && _foreground && _playIntent && _error == null && _player.state.playing` 同步开关，`dispose` 兜底释放，因此暂停、缓冲出错误、切后台、退出播放页和息屏后手动锁屏都会释放常亮（缓冲中仍保持，与 Android Media3 的 `KEEP_SCREEN_ON` 语义一致）。纹理路径的 `Video` 传入 `wakelock: false`，由本项目状态机单独决定，避免 media_kit_video 的全局开关与本项目开关互相关闭。
-- 依赖：`pubspec.yaml` 增加 `wakelock_plus: ^1.8.0` 并递增版本到 `0.2.74+2080`；该包此前已作为 media_kit_video 的传递依赖锁定在 1.8.0，本次只把 `pubspec.lock` 的 `dependency` 改为 `direct main`，版本与 sha256 未变，构建时的 `flutter pub get --enforce-lockfile` 不需要重新解析。Android / iOS 由原生插件在 Activity 窗口上增删 `FLAG_KEEP_SCREEN_ON`，Windows / macOS / Linux 走 Dart 插件（Windows 为 `SetThreadExecutionState`），`.dart_tool/flutter_build/dart_plugin_registrant.dart` 中三端注册已由既有依赖生成，Windows 侧不需要改 `generated_plugin_registrant.cc`。
-- 工具链与前检查：Flutter SDK 位于 `~/Library/Caches/duanju-build/flutter`（`flutter` / `dart` 不在默认 PATH，构建前显式加入）。`dart format --output=none --set-exit-if-changed lib/screen_awake.dart lib/player_screen.dart` 返回 0 变化；`dart analyze lib/screen_awake.dart lib/player_screen.dart` 输出 8 条 info，全部是 `curly_braces_in_flow_control_structures` 与 `prefer_interpolation_to_compose_strings` 的既有 lint，无 error、无 warning，新增代码未产生新问题；`flutter pub get --enforce-lockfile` 通过且 `pubspec.lock` 零变化，确认手工调整的 `dependency: "direct main"` 与 `pubspec.yaml` 一致。
-- 打包：按用户“打包app”的要求执行 `python3 scripts/build_android.py --all-sources --abi arm64-v8a --cn-mirrors`，Go 核心复用未改动的 `libduanju_core.so`，Flutter Release 构建通过，产出 `dist/android/zhenguojian-0.2.74+2080-arm64-v8a.apk`（31,560,628 字节，versionName `0.2.74`，versionCode `4080`，SHA-256 见“安装包与平台状态”）。已独立复核：`aapt dump badging` 得到包名 `com.duanju.duanju_app`、应用名「真果鉴」、`native-code: arm64-v8a`、minSdk 26 / targetSdk 36；`apksigner verify --print-certs` 通过 APK Signature Scheme v2，证书 SHA-256 `dafec6763f52df367b8b211ed0f0073f2a3ae7061173df4ebdc68996c56a7670`（沿用本机 Android Debug 签名，与历史包一致，可覆盖升级）；`zipfile.testzip()` 无 CRC 错误；包内 `lib/arm64-v8a/libduanju_core.so`、`jniLibs` 中本次库文件与 `libduanju_core.build.json` 三者 SHA-256 同为 `67706618f7528328f4f9e1a9ed94cfff2913a8c7e9c855a127008ac11a8933eb`，`allSources=true`；并从包内 `libapp.so` 检出 `ScreenAwake` 与 wakelock 字符串，确认本次修复确实编译进该安装包而不只是落在源码里。原始记录见 `build/packages-0274/`（构建日志与 `apk-verification.json`）。
-- 边界：只构建 Android 全站源 ARM64 Release 包，未构建 Windows / iOS / TV 包；构建时 `adb devices` 无设备连接，未安装、未启动、未做真机播放回归与自动化测试。待集中验证：30 秒锁屏设备上连续播放不熄屏、暂停 / 出错 / 切后台 / 画中画 / 退出播放页后常亮确实释放、Windows 桌面端屏幕保持，以及息屏后回前台仍需手动点播放的旧行为是否依旧存在。安装到设备后在播放中可用 `adb shell dumpsys window | grep -i KeepScreenOn` 取证。
-
-0.2.73+79 定位红果部分剧集无法播放的根因，只调整 Go 核心 `native/core/app_stream.go` 中本机播放代理的扩展名嗅探逻辑，未改动 Dart 侧。
-
-- 复现：用真实红果 App 取流链路抽样《我都元婴期了，你跟我说开学第二季》（剧 ID `7690059679510055960`，911 集）的 25 集，逐集记录上游文件大小与本机代理返回码。修复前 4 MB 及以下的 8 集返回 200 / 206，超过 4 MB 的 17 集在无 Range 与 `Range: bytes=0-` 两种请求下均返回 502「读取媒体失败，请重试」。
-- 根因：无扩展名上游路径会先执行 `io.ReadAll(io.LimitReader(response.Body, 4<<20+1))`，把响应读满 4 MB 就按读取失败处理并跳到下一条线路，因此所有大于 4 MB 的媒体都被拒绝。红果 App 媒体地址形如 `/video/tos/cn/.../<id>/?a=8662&...`，`path.Ext` 为空，必然进入该分支；`nativePlaybackChoices` 给出的 10 条线路共用同一上游形态，`PlaybackRecovery` 又在 3 次额度内优先耗尽备用线路，最终呈现为错误页的「暂时无法播放 / 自动恢复未成功」。
-- 修复：嗅探上限改为 256 KB；读到上限且前缀不是 `#EXTM3U` 时判为媒体流，写出已缓冲前缀后用 `io.Copy` 继续转发剩余响应，上游的 `Content-Length`、`Content-Range`、`Accept-Ranges`、`ETag`、`Last-Modified` 照常转发；前缀确为 `#EXTM3U` 的响应才在 4 MB 上限内读完并交给播放列表改写。该分支同时是启动提速：以前任何无扩展名媒体都要先下载 4 MB 才向播放器返回首字节，现在最多 256 KB。
-- 复验：修复后同样 25 集抽样 24 集可播放；19.0 MB 与 7.9 MB 的集在无 Range 下返回 200、在 `Range: bytes=0-` 下返回 206 且 `Content-Range` 覆盖完整文件；剩余 1 集为上游单次瞬时失败，对同一地址单独重试 3 次均返回 200。
-- 测试：新增 `native/core/app_stream_test.go`，覆盖大文件无扩展名媒体完整转发、`Range` 请求透传和无扩展名播放列表改写，均通过；`go test -run 'Native|Media|Playback|Download|Preload|Stream'` 通过。`TestNativeCatalogMetadataSaveExcludesInFlightCursor`、`app_catalog_persistence_test.go` 与 `provider_rankings_test.go` 的失败在未改动的 `../guoapp` 镜像上同样存在，属既有问题，本轮未处理。
-- 附带观察：红果 App 详情接口 `/novel/player/video_detail/v1/` 对 19 集、60 集、475 集和 911 集的剧目都返回 HTTP 200、正文 0 字节，红果详情实际一直走网页 `/detail?series_id=`；本轮没有改动这条链路，但大剧集的章节完整性依赖网页入口。
-- 遗留：`PlaybackRecovery` 在可用线路不少于 3 条时会把 3 次自动恢复额度全部用在备用线路上，`refresh`（重新解析播放地址）在额度内到不了，已过期的签名地址只能靠手动重试恢复；`test/playback_recovery_test.dart` 把该顺序写成了预期，本轮未改，待确认后再调整。
-- 打包：按用户“app 打包出来”的要求执行 `python3 scripts/build_android.py --all-sources --abi arm64-v8a --cn-mirrors`，Go 核心与 Flutter Release 构建通过，产出 `dist/android/zhenguojian-0.2.73+2079-arm64-v8a.apk`（31,560,424 字节，versionName `0.2.73`，versionCode `4079`，SHA-256 见“安装包与平台状态”）。已独立复核：`aapt dump badging` 得到包名 `com.duanju.duanju_app`、应用名「真果鉴」、`native-code: arm64-v8a`、minSdk 26 / targetSdk 36；`apksigner verify` 通过 APK Signature Scheme v2，签名证书与历史包一致（Android Debug），可覆盖升级；`zipfile.testzip()` 无 CRC 错误；包内 `lib/arm64-v8a/libduanju_core.so` 的 SHA-256 与 `jniLibs` 中本次新编译的库及 `libduanju_core.build.json` 记录三者相同。构建时 `adb devices` 无设备连接，本轮未安装、未启动、未做真机播放回归。
-- 边界：只完成源码修复、设备外的 Go 定向验证与 Android 全站源 ARM64 Release 打包；未构建 Windows / iOS 包，未安装真机，未执行 Dart 静态分析或真机播放回归；红果在线播放需要在集中验证时复验。
-
-0.2.65+71 调整非全屏控制层为无操作 3 秒后淡出，补齐缓冲 / 长按结束后的计时恢复、菜单与拖动期间的隐藏保护，并将轻点画面统一为切换控制层。完成 Dart 格式整理与源码收尾同步后，按用户追加的“打包 app，安装给我”要求执行 `python3 scripts/build_android.py --all-sources --abi arm64-v8a --cn-mirrors`：Go 核心与 Flutter Release 构建通过，APK 的应用名称、版本、ARM64 架构、CRC、对齐、v2 签名及包内全站源核心哈希核对通过，沿用本机 Android Debug 签名。安装至 vivo V2453A（`10CF6H1D2L0009S`）时 ADB 返回 `Success`，采用覆盖升级，未卸载或清除数据；设备随后断开 USB，未完成安装后版本 / 哈希复核，未启动应用。证据位于 `build/packages-0265/` 的构建日志、`apk-verification.json`、`install.log` 与 `device-installation.json`。未执行静态分析、自动化测试或播放回归；后续集中验证应覆盖首次播放、手动切集、超过 3 秒的缓冲后恢复、长按松开、进度拖动、菜单关闭、轻点呼出及自动连播，手机和 Windows 行为均待验收。
-
-0.2.64+70 仅调整卡片三点菜单的背景、图标阴影、交互反馈和点击区域，完成 Dart 格式整理与源码收尾同步。按用户要求暂停测试，本轮未执行静态分析、自动化测试、平台构建或设备复验，属于开发快照。
-
-0.2.63+69 追加用户指定图标、加载提示和播放按钮透明度调整，延续原生核心打包修复。
-
-- 源码检查：`test/player_screen_test.dart` 与 `test/search_cache_test.dart` 共 18 项通过，覆盖浅色主题下准备提示可读、无橙色转圈、准备与缓冲期间不叠放播放按钮、就绪后恢复操作、入场布局和推荐缓存；测试夹具的缓冲事件调整后相关用例复验通过。7 个相关 Dart 文件分析无 error / warning，保留播放器中 8 条既有 info，更新后的设备用例单独分析通过。
-- 打包保护：`scripts/test_app_build.py` 6 项、`scripts/test_sync_source.py` 4 项通过；缺失构建记录、站源开关不一致、核心被替换与 APK 内旧核心均会被拒绝。Go 已使用 `-s -w` 裁剪符号，Android 对该核心保留原始字节，避免打包过程再次修改后无法核对哈希。
-- 原生启动：此前 0.2.62 的 `integration_test/startup_test.dart` 已在 vivo V2453A 通过，调用真实 `app.main`、`AppBootstrap` 和 `NativeRepository.initialize`，确认 `allSources=true` 且首页出现；使用独立调试包并禁用远程图片。日志与界面证据保存在 `build/device-test/startup-0262/`，与最终 0.2.63 包内 Go 核心的 SHA-256 相同。
-- 图标与安装包：原始 PNG 与用户提供的 2880×2880 图片字节一致；Android 五档、Windows 七档 ICO、iOS 不透明 PNG 及两个电视横幅规格正确。0.2.63 全站源 ARM64 Release 构建、ZIP 完整性、版本、包内核心哈希与五档图标像素检查通过；安装包信息见“安装包与平台状态”。Windows、Android TV 和 iOS 本轮仅更新资源，没有平台运行验收。
-- 正式包安装与启动：0.2.63 已通过 `adb install -r` 覆盖安装到 vivo V2453A，保留原应用数据；设备上的 APK SHA-256 与分发包完全一致，版本为 `0.2.63 / 2069`。暂时关闭 Wi-Fi 与移动数据后启动，UI XML 确认出现首页导航，未再出现站源版本不一致或原生核心加载失败；应用日志未发现崩溃。检查只读取界面结构，没有截取或处理缓存海报；结束后 Wi-Fi、移动数据与飞行模式恢复到原状态。证据保存在 `build/device-test/startup-0263/`。
-- 收尾边界：按用户“测试可以了，需求收尾”的要求停止后续验证。更新后的 `integration_test/player_entry_test.dart` 调试包已构建，但没有安装运行；0.2.63 新加载提示、半透明按钮与桌面图标未再做设备视觉复验，不能将此前 0.2.61 的合成播放记录当作这些新增外观的验收结论。临时合成视频服务和 ADB 端口转发已关闭，独立调试包已清理；其他平台与未覆盖行为继续保留开发快照状态。
-
-0.2.61+67 针对 2026-09-28 的手机反馈完成以下定向验证；整体验证仍暂停，以下结果仅覆盖本轮修复。
-
-- 源码检查：本轮 8 个 Dart 文件的 `dart analyze` 无 error / warning，保留播放器中 8 条既有 info；`test/search_cache_test.dart` 与 `test/player_screen_test.dart` 共 17 项通过，补入搜索键盘开合场景后相关布局用例复验通过。使用 `DISABLE_REMOTE_IMAGES=true` 和合成剧目，覆盖 20 分钟缓存、相同数量结果的资料 / 有效期更新、空结果缓存、过期保留旧内容、重复请求合并、静默流式追加、反复切 Tab 与重新进入、视频尺寸变化和键盘高度变化。
-- 手机：ADB 连接 vivo V2453A（设备标识 `10CF6H1D2L0009S`），安装独立验证包 `com.duanju.duanju_app.debug`，应用数据与原安装分开。`integration_test/player_entry_test.dart` 通过：两次从 981 像素高的展开键盘进入播放，视频区域始终为 `Rect(0, 0, 411.4, 485.1)`，Tab 顶部始终为 `497.62 dp`；原生 SurfaceFlinger 视频区域为 `[0 0 1079 1273]`，顶部边缘取样为纯黑。合成视频两次播放均有推进且画面像素发生变化；推荐加载横线数量为 0，三轮 Tab 往返及退出重进后搜索总次数仍为 1。
-- 本地证据：`build/device-test/player-entry/fixed/` 保存 `entry.mp4`、入场逐帧图、两次播放与推荐截图、UI XML、窗口 / SurfaceFlinger 状态和 `logcat.txt`；修改前的定向记录在 `baseline/`。验证过程没有请求站源图片。旧验证脚本在第二次打开时仅等待 3 秒便检查播放进度，基线该断言失败；本轮按实际就绪状态在有界时间内等待，并同时核对画面像素，不将基线当成通过记录。
-- 发布构建：已生成 Android ARM64 全站源 APK `dist/android/zhenguojian-0.2.61+67-arm64-v8a.apk`，31,458,604 字节，包名 `com.duanju.duanju_app`，versionName `0.2.61`，versionCode `2067`，SHA-256 为 `e077b04c38660243a6e7b6d0ac94b794abf6197897acff1ad1c39dc5476b7772`。该 APK 曾安装到手机，但用户在真实启动时发现站源版本不一致；原因是该次直接运行 Flutter 构建时复用了默认红果版的旧原生核心。此 APK 判定为无效，已移出 `dist/android`，仅在 `build/device-test/player-entry/baseline/invalid-0.2.61+67.apk` 留作故障证据；上述合成播放检查不等于原生核心启动验证。本轮未执行 Windows、Android TV、iOS 构建 / 设备验收，也未恢复真实站源和全部功能回归。未覆盖部分仍为开发快照。
-
-0.2.51+57 按电视端遥控反馈重做焦点模型，只改电视分支。新增遥控列表 / 遥控行 / 统一遥控条目 / 遥控选项列表对话框与页面初始焦点兜底；`RemoteGrid` 增加上下左右越界出口和“回到当前焦点项”，首页、榜单、下载、设置、推荐与详情选集网格按区域串联；下载页电视模式增加遥控工具行与关键字搜索弹窗，榜单与下载合集的操作改写为遥控选项对话框。
-
-本轮已恢复工具链并完成第一轮编译验证：Flutter SDK 3.47.4（Dart 3.13.3）重新安装到 `~/Library/Caches/duanju-build/flutter`，安装包对官方 releases 清单做 SHA-256 校验通过。`dart analyze lib` 输出 92 条问题，全部为既有 info 级 lint，无 error 与 warning。编译期发现并修复 2 个真实错误：`home_screen.dart` 与 `rankings_screen.dart` 把 `focusNode` 传给了 `PopupMenuButton`，而该类没有该参数；改为多选模式下分类栏按上聚焦标题栏“取消”按钮，其余情况交回默认方向遍历，标题栏“更多”仍按原生焦点参与遍历。同时清理 `settings_screen.dart` 中因新增 `app_layout.dart` 导入而变多余的 `app_build.dart` 导入。
-
-已生成红果版 Android release 包：`dist/android/hongguojian-0.2.51+57-arm64-v8a.apk`，31,209,723 字节，SHA-256 为 `409106f06d2ede0caf780026340376f75219ac566a6a3fc49647c7ee2cb0a6d5`；`dist/android/hongguojian-0.2.51+57-armeabi-v7a.apk`，39,730,355 字节，SHA-256 为 `f2316398f27008364137e2ebc0cc13cb4c2ac6aca60e65fd8a508c3871bb7962`。包名 `com.duanju.duanju_app`，versionName `0.2.51`，versionCode `2057` / `1057`，targetSdk 36，沿用本机 Android Debug 签名，已核对版本信息、ABI 与内嵌原生库。
-
-`flutter test test/television_test.dart` 结果为 4 通过 2 失败，失败是同一用例在两个屏幕尺寸下的 `start-play` 断言：0.2.32 起首页卡片普通点击已改为无中间页直达播放，`_openDrama` 仅在 `download: true` 时进入详情页，该断言仍按旧行为期待详情页按钮，属既有失败，与本次焦点改造无关。未安装设备、未执行实机遥控验收，电视端方向键与确认键行为仍需在 Android TV 实机确认。
-
-0.2.44+50 更新野果默认入口为 `https://analyze.buxefaex.cc/`，并把 `https://ygdj7.com/` 作为线路发现页；新旧 `buxefaex` / `fzchosdi` 线路、`delta.ygrwdsgt.cc` 和 `yeguodj.com` 均归一为野果站源。0.2.47 起旧域名仅用于识别已有缓存和数据，不再作为运行时接口回退地址。0.2.48 将首页和推荐卡片普通点击改为无中间页直达播放：详情仍先读取，但不再 push “正在进入播放”页面，读取成功后直接打开播放器。剧果保留 `/play/<episode>` 返回的 CloudFront 三枚签名 Cookie，并让播放列表、分片、预加载和下载继续使用同来源凭证；帝果 vplayer 签名请求失败直接返回错误，不再静默交给播放器一个未签名地址。新增 Go 定向测试覆盖新域名识别、野果 50 页 POST 更新、目录页大小、三站源榜单、剧果签名 Cookie 和帝果签名错误传播；仅运行源码定向测试，未打包、未安装设备、未请求真实媒体或做真实播放验收。
-
-0.2.42+48 继续按播放页与首页反馈收紧：追剧确认固定在播放页“简介”内容区，不作为 Tab；播放页下方 Tab 保持“选集 / 简介 / 下载”，下载选择器嵌入下载 Tab；播放器底部工具按钮改为少量靠右连续成组，超过阈值再拆成左右两组，避免平均分散在整行；首页在已有内容时不再于分类下显示异常提醒，目录滚动接近底部自动续页并保留“加载更多”兜底。已执行 `dart analyze lib/home_screen.dart lib/player_controls.dart lib/player_screen.dart lib/download_picker.dart lib/television_controls.dart test/player_screen_test.dart test/downloads_test.dart test/widget_test.dart test/danmaku_widget_test.dart`，仅剩既有 info 级 lint；`flutter analyze ...` 仍在中文路径下触发 analysis server LSP JSON 解析异常，未作为有效检查。已执行 `flutter test --no-pub --dart-define=DISABLE_REMOTE_IMAGES=true test/player_screen_test.dart`、`test/downloads_test.dart --plain-name "mobile player moves download and follow into tabs"`、`test/widget_test.dart --plain-name "fresh disk catalog skips the network and resumes pagination"`、`test/widget_test.dart --plain-name "stale disk catalog remains usable when refresh fails"`、`test/danmaku_widget_test.dart` 均通过；新增 `compact player tools stay clustered instead of evenly spread` 覆盖播放器底部按钮不再平均分散。完整 `test/downloads_test.dart` 仍有既有下载合集默认折叠 / 遥控导航断言未通过，未作为本轮验收结论。已执行默认红果版 `flutter build apk --debug --no-pub`，生成 `build/app/outputs/flutter-apk/app-debug.apk`，大小 162 MB，版本 `0.2.42+48`，SHA-256 为 `eeaea66b8df3fd4658e29b33d947f92ae41bc5551d7aed8adc72f7f8a8325205`。本轮未生成 Release APK、未安装设备、未执行真实播放视觉验收。
-
-0.2.40+46 针对用户反馈的 iOS IPA 播放闪退做源码排查与兜底：应用能启动、浏览和进入详情，说明 Flutter 壳与原生 Go 核心大概率已加载；崩溃发生在点击任意剧集进入播放后，最可疑点是 iOS 播放页创建 media_kit_video 的 libmpv 纹理输出。上游 iOS 插件在 `mpv_render_context_create` 失败时调用 `exit(1)`，不会回到 Flutter 错误页，因此外观看起来是点播放后 App 直接退出。已将 iOS `VideoController` 配置为禁用硬件纹理加速，改走软件纹理兜底；Android 和 Windows 保持原路径。本轮按要求未生成 IPA、未执行真机播放复验，需用 Xcode 设备日志确认是否仍有 `MPVHelpers`、`mpv_render_context_create` 或 `Mpv.framework` 相关崩溃。
-
-0.2.39+45 继续按播放页 UI/UX 反馈优化：播放页下方 Tab 改为“选集 / 简介 / 下载”，原“相关”不再放在播放页；红果同系列相关推荐仍保留在详情页，避免播放页出现经常为空的内容区。追剧入口从播放器覆盖层移到简介内容区；下载入口从播放器覆盖层移到播放页下载 Tab，下载选择器支持嵌入式紧凑布局并复用连续选集网格。播放器覆盖层移除移动端音量、下载和追剧按钮，桌面端保留音量，电视端不再显示推送按钮；弹幕按钮改为圆形“弹”字样。首页目录滚动接近底部自动加载下一页，底部“加载更多”保留为兜底入口。已执行 `dart analyze lib/home_screen.dart lib/player_controls.dart lib/player_screen.dart lib/download_picker.dart test/player_screen_test.dart test/downloads_test.dart test/danmaku_widget_test.dart`，仅剩既有 info 级 lint；待执行播放器、下载、首页分页定向测试和 Android Debug 构建。未生成 Release APK，真实设备视觉验收仍待集中执行。
-
-0.2.38+44 继续修正播放器实机截图反馈：非全屏点击画中画后，整个播放页在 PiP requested / active 状态下只渲染视频 Pane，不再把选集 / 简介 / 相关 Tab 内容缩进系统小窗；`sourceRectHint` 改为在纯视频布局重绘后一帧再计算，和实际进入小窗的画面一致。全屏播放器顶部显式使用 `viewPadding.top + 16` 且至少 40dp 避让，避免返回 / 标题与状态栏网络、电量、时间重叠；底部显式使用 `viewPadding.bottom + 24` 且至少 64dp，把进度条和底部工具整体抬高，避开虚拟导航栏；PiP 请求和激活期间连保存进度告警也不再绘制。已执行 `dart analyze lib/player_controls.dart lib/player_screen.dart test/player_screen_test.dart`，仅剩既有 info 级 lint；已执行 `flutter test --no-pub --dart-define=DISABLE_REMOTE_IMAGES=true test/player_screen_test.dart`、`flutter test --no-pub --dart-define=DISABLE_REMOTE_IMAGES=true test/danmaku_widget_test.dart`；已执行 `./gradlew :app:assembleDebug` 成功。未生成 Release APK，真实 Android 播放小窗和全屏控件截图仍待集中设备验收。
-
-0.2.37+43 优化 Android 画中画小窗：参考 Android PiP 和 Apple 小窗播放最佳实践，进入画中画后 Flutter 自绘播放器控件、弹幕覆盖、进度条、标题、加载和错误覆盖层均不再绘制，小窗只保留视频画面，播放 / 暂停 / 返回应用 / 关闭等交互交给系统 PiP 控件；进入前先隐藏覆盖层并等待一帧，再调用原生 `enterPictureInPictureMode`，同时传入视频区域 `sourceRectHint`，避免系统截取到带按钮的旧界面并优化转场动画。已新增 `test/player_screen_test.dart` 用例覆盖“画中画隐藏 App 覆盖控制层”。已执行 `dart analyze lib/player_controls.dart lib/player_screen.dart test/player_screen_test.dart`，仅剩既有 info 级 lint；已执行 `flutter test --no-pub --dart-define=DISABLE_REMOTE_IMAGES=true test/player_screen_test.dart`、`flutter test --no-pub --dart-define=DISABLE_REMOTE_IMAGES=true test/danmaku_widget_test.dart`；已执行 `./gradlew :app:assembleDebug` 成功生成 162 MB Debug APK，并通过安装辅助脚本安装到 Android 15 / API 35 真机 V2453A，启动到首页且 logcat 未见 App 崩溃。自动点播进入真实 PiP 时设备会话被 vivo 系统 single-cleaner 强停，未完成真实小窗截图验收；Release APK 也未在本轮生成。
-
-0.2.36+42 微调播放器布局：移除底部中间工具区的横向滚动容器，保留左侧倍速 / 清晰度、中间推送 / 下载 / 追剧、右侧音量 / 画中画 / 全屏或选集的稳定分布；红果弹幕按钮移到播放器右侧中段独立悬浮，避开中央播放按钮和底部进度条，弹幕开关和失败重试回调保持不变。已执行 `dart analyze lib/player_controls.dart`、`flutter test --no-pub --dart-define=DISABLE_REMOTE_IMAGES=true test/player_screen_test.dart`、`flutter test --no-pub --dart-define=DISABLE_REMOTE_IMAGES=true test/danmaku_widget_test.dart`。本轮未打包 APK、未安装设备，真实站源和平台行为仍待集中验证。
-
-0.2.35+41 修正播放器按钮布局继续反馈：按 Material / Android 触控目标规范和 Apple 自定义视频播放控件建议，把倍速、清晰度、推送、下载、追剧、弹幕、音量、画中画等入口统一为 36 高视觉工具按钮，外层保留更大的可点区域；移动和桌面底部控制层改为左侧倍速 / 清晰度、中间内容动作、右侧音量 / 画中画 / 全屏或选集分组，宽度不足时中间动作区可横向容纳，避免所有按钮堆到中间。音量不再打开居中大弹窗，改为右下角小型竖向滑动面板，支持拖动和一键静音 / 恢复。已执行 `dart analyze lib/player_controls.dart`、`flutter test --no-pub --dart-define=DISABLE_REMOTE_IMAGES=true test/player_screen_test.dart`、`flutter test --no-pub --dart-define=DISABLE_REMOTE_IMAGES=true test/danmaku_widget_test.dart`。`flutter analyze lib/player_controls.dart lib/player_screen.dart lib/lan_controller.dart` 在中文项目路径下再次触发 analysis server LSP JSON 解析异常，未得到有效报告；本轮未打包 APK、未安装设备，真实站源和平台行为仍待集中验证。
-
-0.2.34+40 修复移动播放器继续反馈：选集 Tab 的连续网格顶部恢复区间选择器，可快速定位每 50 集开头；播放器底部改为工具按钮一行、时间与进度条同一行，移动端去掉底部重复旋转按钮，顶部返回 / 旋转按钮增加安全间距，音量按钮在手机播放器始终显示；局域网投屏按钮尺寸与其他播放器工具按钮统一。红果相关推荐新增本地剧库系列候选缓存，详情和播放页相关不再只依赖追剧 / 历史 / 新季提醒，支持聚宝仙盆这类多季剧展示同系列。已执行 `dart analyze lib/player_controls.dart lib/episode_browser.dart lib/local_store.dart lib/local_snapshot.dart lib/player_screen.dart lib/detail_screen.dart lib/lan_screen.dart test/follow_state_test.dart test/library_features_widget_test.dart test/player_screen_test.dart test/danmaku_widget_test.dart`，仅剩既有 info 级 lint；已执行 `flutter test --no-pub --dart-define=DISABLE_REMOTE_IMAGES=true test/follow_state_test.dart`、`test/library_features_widget_test.dart --plain-name "detail related series can use refreshed catalog candidates"`、`test/player_screen_test.dart`、`test/danmaku_widget_test.dart`、`test/downloads_test.dart --plain-name "detail download picker handles VIP, quality and added=2"`。本轮未打包 APK、未安装设备，真实站源和平台行为仍待集中验证。
-
-0.2.33+39 继续优化播放器控制层与移动播放页：手机和桌面播放器覆盖层移除“播放设置”按钮，倍速、清晰度、推送、下载、追剧、弹幕、音量、画中画和旋转直接可用；自动连播和下一集预加载默认始终开启；上一集 / 播放暂停 / 下一集只保留居中一组，非全屏不再在播放器层重复显示选集按钮。移动端 Tab 增大点击区域，选集改为带边框的连续滚动紧凑网格，简介保留封面，相关列表显示红果同系列封面；选集按钮区分焦点和当前集，避免看起来多集同时激活。播放器缓冲进度改用进度条二级轨道，不再显示“已缓冲至”文字；下载选集页提供“取消全选”。已执行 `dart analyze lib/player_controls.dart lib/player_screen.dart lib/episode_browser.dart lib/remote_widgets.dart lib/download_picker.dart lib/playback_buffer.dart test/danmaku_widget_test.dart test/player_screen_test.dart test/downloads_test.dart`，仅剩既有 info 级 lint；已执行 `flutter test --no-pub --dart-define=DISABLE_REMOTE_IMAGES=true test/player_screen_test.dart`、`test/danmaku_widget_test.dart`、`test/downloads_test.dart --plain-name "detail download picker handles VIP, quality and added=2"` 和 `added=0`。本轮未打包 APK、未安装设备，真实站源和平台行为仍待集中验证。
-
-0.2.32+38 优化播放入口与移动播放页：普通点剧先读取详情后直接进入播放器，下载入口仍走详情页；手机播放器下方用“选集 / 简介 / 相关”Tab 承接原详情内容，红果同系列剧在相关 Tab 中打开；手机播放页移除额外顶部标题栏，返回和旋转放入视频控制层，倍速、清晰度、推送、上一集、下一集、选集和设置不再在视频下方重复出现；移动端选集改为 30 集一组紧凑方格，分组、当前集和跳转合并在同一行；首页移除分类下方的更新状态提示，保留刷新任务；详情页选集默认折叠且只高亮当前播放集；下载选集页显式提供“全选 / 清空 / 仅非 VIP”与已选数量。已执行 `dart analyze lib/player_screen.dart lib/player_controls.dart lib/episode_browser.dart lib/remote_widgets.dart lib/player_menu.dart test/player_screen_test.dart test/theme_test.dart`，仅剩既有 info 级 lint；已执行 `flutter test --no-pub --dart-define=DISABLE_REMOTE_IMAGES=true test/player_screen_test.dart` 和 `test/theme_test.dart --plain-name "player shell follows light theme while video controls stay dark"`。此前本轮还执行过 `test/library_features_widget.dart` 和下载选择定向测试。未打包 APK、未安装设备，真实站源和平台行为仍待集中验证；完整 `test/downloads_test.dart` 仍有既有下载合集默认折叠导致的旧断言失败，未作为本轮通过项。
-
-0.2.31+37 仅针对红果接入系列剧与本机新季提醒：详情选集区显示本地已知同系列季；追剧刷新发现后续季时显示“新季”提醒并进入“有更新”筛选；点入新季或标记更新已读后清除提醒，不自动加入追剧。系统级通知因 Android 13+ 需要运行时通知权限且打扰等级更高，暂不接入。已执行 `flutter test test/follow_state_test.dart test/library_features_widget_test.dart`，覆盖红果季号识别、无后缀第一季、非红果忽略、提醒持久化 / 已读、追剧筛选和详情切换。`dart analyze` 可运行，仅报告既有 info 级 lint；`flutter analyze` 在中文项目路径下触发 analysis server LSP JSON 解析异常，未得到有效静态分析报告。本轮未打包 APK、未安装设备，真实站源和平台行为仍待集中验证。
-
-0.2.30+36 优化全屏自动连播的控制栏显示：自动切换到下一集时不把播放开始事件当作用户操作，控制栏保持隐藏；首次进入、手动切集、暂停、缓冲和用户点击 / 键盘 / 遥控操作仍可显示控制栏。手机、Windows 与 Android TV 共用该状态边界。随后生成全站源版 Android ARM64 Release 包 `dist/android/zhenguojian-0.2.30+36-arm64-v8a.apk`，SHA-256 为 `272f344a2d7976811c214180414965ed316a3bcdbd4b7335ec9ce8220c436f15`；已完成 ARM64 原生库、版本信息和 APK v2 签名检查，未安装到设备，播放行为仍待实机验收。
-
-0.2.29+35 完成电视自动识别与横屏方向管理源码：启动前识别设备，返回前台重新查询，失败保留既有结果；应用统一处理电视模式、手机全屏和播放器退出时的方向归还，Android Activity 对电视模式拦截竖屏请求并在恢复时重申横屏。随后生成全站源版 Android ARM64 Release 包 `dist/android/zhenguojian-0.2.29+35-arm64-v8a.apk`，SHA-256 为 `ef8f971afc6119b8573c1adc2b64d736d27c9b400304bec75926dadd24a35ffc`；包签名为本机 Android Debug 签名，已完成 ARM64 原生库、版本信息和 APK v2 签名检查，未安装到设备，Android 手机、电视 / 盒子及其它平台行为仍未完成本轮验收。
-
-以下保留历史版本的实施与检查记录。
-
-0.2.24+30 按移动端和电视端画质增强卡死反馈，将画质增强功能收窄为仅 Windows 桌面端可见和可运行；Android 手机、Android TV 与 iOS 均不再显示画质增强、画面类型和原画对比入口，也不初始化 mpv 增强后端，已保存偏好保留给 Windows 使用。本轮已生成全站源版 Android arm64 release 包 `dist/android/zhenguojian-0.2.24+30-arm64-v8a.apk`，SHA-256 为 `c0a7d3c4469042d9a0cfcf0d6b01ed865db5e7580d552b7e3a27b1f582dfe9b7`；未安装到设备，未执行完整回归。
-
-以下保留历史版本的实施与检查记录。
-
-0.2.23+29 修正全屏播放器控制层级：顶部只保留返回与标题，中央只保留大播放控制，底部统一承载播放、进度、时间、选集、倍速 / 画质、推送、原画对比、设置、画中画和全屏切换；普通小视频控制层也不再把设置、画中画和原画对比堆到顶部。全屏播放器的设置与选集弹窗、电视播放器的设置与分集弹窗均强制使用播放器暗色主题，不受浅色应用主题影响。随后使用 Flutter SDK 完成全站源版 Android arm64 release 构建，产物为 `dist/android/zhenguojian-0.2.23+29-arm64-v8a.apk`，SHA-256 为 `81c673ecac5526dd46a517ced32bbf8d2b298125f80b7eaca7fa330075958778`；未安装到设备，未执行完整回归。
-
-以下保留历史版本的实施与检查记录。
-
-0.2.22+28 修正手机竖屏播放页结构：视频下方只保留紧凑播放面板，当前集、上一集 / 下一集、倍速、画质、推送与“选集”入口可直接操作；完整选集仍通过折叠入口打开原选集面板，不再常驻铺满页面。本轮仅做源码实现、格式整理、窄范围静态检查与收尾同步；未生成新 APK，未做设备安装复验、平台构建或完整回归。
-
-以下保留历史版本的实施与检查记录。
-
-0.2.21+27 修正播放器页面外壳跟随浅色 / 深色主题，视频画布与覆盖控制保持深色；画质增强关闭时隐藏画面类型和原画对比，开启后展开配置；原画对比不再等待渲染确认成功才可用；Android 自动档先保流畅使用高质量缩放，清晰优先才尝试更高负载增强。本轮通过 ADB 确认当前前台 App 为 `com.duanju.duanju_app/.MainActivity`、进程 `29688`，并按 `logcat --pid=29688` 定位当前 App 日志；当时该进程没有可读历史日志行。清理本项目可再生成的 `build` / `.dart_tool` 缓存后，窄范围 `dart analyze lib/player_screen.dart lib/player_menu.dart lib/video_enhancement_settings.dart lib/video_enhancement.dart lib/video_enhancement_policy.dart test/theme_test.dart` 完成，仅剩既有 info 级 lint；新增播放器主题用例 `flutter test test/theme_test.dart --plain-name "player shell follows light theme while video controls stay dark"` 通过。整份 `test/theme_test.dart` 仍有既有导航断言 `settings changes open routes without losing the active tab` 未通过，未作为本轮验收结论；本轮没有平台构建、设备复验、新 APK、Windows 完整包或 iOS 应用。30 项已实现待验证仍保持未勾选。
-
-以下保留历史版本的实施与检查记录。
-
-0.2.20+26 接入 Android 手机 / 平板播放器画中画源码：Activity 声明 PiP 能力，播放器查询系统支持后显示入口，并在进入画中画时保持播放生命周期；未执行静态分析、自动化、平台构建或设备复验，也没有该轮新 APK、Windows 完整包或 iOS 应用。0.2.19+25 统一该站源的用户可见名称为剧果，保留内部 `huangju` 标识以兼容已有数据。启动诊断只读取了设备已有崩溃日志，启动修复、榜单、画质增强和画中画尚未执行平台验收；帝果公开播放路径检查另行记录，仍不实现绕过 VIP / 试看限制。
-
-以下保留历史版本的实施与检查记录。
-
-0.2.17+23 接入野果与帝果，包含分类、目录与搜索分页、详情、真实分集、媒体解析和来源请求头；新增站源纳入既有权限、下载、资料回写及局域网互联范围。野果的接口配置在设备内动态取得；帝果兼容用户参考脚本的同站媒体路径规则。
-
-本轮为实现需要读取了两站的 HTML、JavaScript 和 JSON 接口文本，完成变更 Dart / Go 源码格式整理与源码镜像同步；未执行新增源码、静态分析、构建、自动化测试、回归、设备 / 模拟器、播放、下载或双端验证，未请求站源图片、播放列表、密钥或媒体文件。该轮记录的两份 Android APK 为 0.2.15+21，后来已有用户使用 0.2.17+23 并报告启动问题。该轮 28 项已实现待验证的状态保持未勾选，Android 手机、Windows、Android TV 与 iOS 的实际运行结论等待集中验证。
-
-以下保留历史版本的实施与检查记录。
-
-0.2.16+22 接入剧果访客授权、动态分类、热门 / 最新、目录与搜索分页、详情和签名 Cookie 媒体链路；榜单移至顶部标题栏“排序与筛选”后面。该轮仅整理源码格式并同步，没有运行静态分析、构建、自动化、设备、真实站源或双端验证。
-
-0.2.15+21 根据首页截图调整多选与导航入口：移除首页全选，展开后显示文字“清空 / 取消”，底部固定已选数量及“下一步”；仅红果分类在“全部”后提供内嵌推荐，当时将“榜单”放在分类栏右侧，位置已在 0.2.16 调整。
-
-变更 Dart / Go 源码完成格式整理，两版 Android ARM64 Release 构建与包检查通过。版本码为 2021，签名与 0.2.10 / 0.2.14 一致；每份 17 个 ARM64 原生库采用 ZIP DEFLATE，安装时解压、CRC、ZIP 对齐、应用名称 / 包名、对应原生核心及两份 APK 的 SHA256 均已核对。构建与包检查记录保存在 `build/packages-0215/`。
-
-0.2.15 未执行静态分析、自动化测试、回归、设备 / 模拟器或真实局域网验证，也未请求站源图片；该版布局、切换推荐与多选操作的实际运行效果待用户安装确认。
-
-0.2.14+20 根据用户提供的“正在打开红果鉴”截图修复启动导航。0.2.13 为接收播放加入固定导航 key 后，初始化前后改变了 `MaterialApp` 的父节点层级，保留下来的根路由继续引用旧应用状态。现在初始化前后都使用同一层 `AnimatedBuilder`，保持应用与导航状态连续，使首页能够接替初始化页，并保留推送接收导航。定位依据为截图与源码，尚未在设备上确认启动效果。
-
-打包同时补齐 `lan_screen.dart` 对 `LocalStoreSync` 扩展的导入，解决 Release 编译失败。0.2.14 执行结果：
-
-| 检查 | 结果与范围 |
-| --- | --- |
-| 源码格式 | 变更 Dart / Go 文件完成格式整理 |
-| Android Release 构建 | 默认红果版、`--all-sources` 全站源版均通过，ARM64，版本 0.2.14+20 |
-| 安装与升级信息 | 应用名称、包名、版本码 2020、最低 Android 8.0 和非调试标记正确；签名有效，且与 0.2.10 / 0.2.13 一致 |
-| 包完整性 | 每份 17 个原生库均为 ARM64 ELF、ZIP DEFLATE；包 CRC、ZIP 对齐和安装时解压配置通过 |
-| 编译配置与校验值 | 两版各自的原生核心与构建记录一致，Dart 与原生二进制分别区分两版；两份 APK 与 `SHA256SUMS.txt` 一致 |
-
-构建和包检查记录在 `build/packages-0214/`，包括两版 `release-*-arm64.log`、`apk-*-verification.log` 和 `apk-verification.json`。0.2.14 没有运行静态分析、自动化测试、回归、设备 / 模拟器或真实局域网验证，没有请求站源图片；包检查不代表启动、同步、推送或其他运行行为已经验收。
-
-0.2.13+19 接入 P3-2 / P3-3：局域网自动连接、追剧与对应续播进度的增量同步 / 手动覆盖、冲突处理和播放推送。功能实施阶段暂停验证，当时只执行：
-
-- `flutter pub get`：取得 `nsd 5.0.1` 及平台依赖，更新 `pubspec.lock`。
-- Dart / Go 源码格式整理。
-- 收尾同步、创建本地 `v0.2.13-unverified` 快照及源码镜像一致性确认。
-
-该功能实施阶段没有运行 Dart 静态分析、Go 编译、自动化测试、回归、完整平台构建、真实局域网通信或设备 / 模拟器操作，也没有请求站源图片。后续按用户要求打包，并在收到启动问题反馈后交付上述 0.2.14 修复包。Android / Windows / TV / iOS 的设备发现、权限、并发同步、取消与回执恢复、推送定位和控件布局仍待集中验证。
-
-以下历史版本的检查结果不能作为后续新增功能的验证结论。
-
-0.2.12+18 完成界面调整及 P2-4 / P2-5 / P2-6 / P2-7 / P2-9 / P3-1 的源码接入，当时的检查结果：
-
-| 检查 | 结果与范围 |
-| --- | --- |
-| 源码格式 | Dart `lib` 与变更 Go 文件完成格式整理 |
-| Dart 静态分析 | `dart analyze --fatal-infos lib` 通过，无问题 |
-| 本机 Go 核心编译 | 在 `native` 执行 `go build ./core` 通过 |
-| Android ARM64 核心编译 | `GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build ./core` 通过 |
-| Windows x64 核心编译 | `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./core` 通过 |
-
-0.2.12 没有执行自动化测试、回归、真实媒体播放或设备 / 模拟器验证，也没有构建新 APK、Windows 完整包或 iOS 应用。上述 Go 检查只覆盖核心源码编译，不代表平台桥接、随包媒体库、界面或合并输出已验收。当时黄果 AI 仅做入口与目录的只读连接诊断，结果超时；未请求站源图片。
-
-以下 0.2.11 及更早版本的检查和安装包记录，也不作为后续新增功能的验证结论。
-
-0.2.11+17 完成 P2-3 红果弹幕的源码接入，Go / Dart 格式与 Dart 静态检查通过。默认红果版和全站源版各通过 **6 项 Go 定向测试（含竞态检测）及 18 项 Flutter 定向测试**。原生检查使用内存文字响应，覆盖原始时间戳、分集身份、异常时间窗口、缓存去重、取消和播放会话隔离；Flutter 使用合成数据，覆盖分页与有界缓存、失败重试、迟到结果、暂停 / 缓冲 / 倍速 / 跳转、连续动画、开关持久化与备份兼容、用户切换、窄屏大字及 TV 设置。
-
-0.2.11 只运行以下弹幕测试，Go 命令在 `native` 目录执行，Flutter 命令在项目根目录执行：
-
-~~~sh
-go test -race ./core -run '^(TestHongguoDanmaku|TestNativeDanmaku)' -count=1 -timeout=60s
-go test -race ./core -ldflags='-X duanjuapp/native/core.buildAllSources=true' -run '^(TestHongguoDanmaku|TestNativeDanmaku)' -count=1 -timeout=60s
-flutter test --no-pub --dart-define=DISABLE_REMOTE_IMAGES=true test/danmaku_test.dart test/danmaku_widget_test.dart
-flutter test --no-pub --dart-define=DISABLE_REMOTE_IMAGES=true --dart-define=ALL_SOURCES=true test/danmaku_test.dart test/danmaku_widget_test.dart
-~~~
-
-Flutter 记录在 `build/danmaku-0211/flutter-default.log` 与 `flutter-all-sources.log`。0.2.11 未进行回归、真实站源弹幕请求、设备或模拟器验证，也未请求站源图片；Android、Windows 与 TV 的实际播放效果待平台验收。0.2.11 当时未单独打包，弹幕实现已包含在新版 APK 中。
-
-0.2.10+16 完成 P2-1 与 P2-2 的源码接入，Dart 格式与静态检查通过。默认红果版和全站源版各通过 **26 项新增功能针对性测试**，使用合成文字与分集数据，禁用远程图片；覆盖追剧记录与实际播放进度分离、已读基准、备份兼容与失败保留、用户隔离、共享更新任务与缓存续页、批量下载重试 / 停止，以及 360×640 和 1100×720 的大字布局。
-
-0.2.10 功能实施阶段执行了以下三份测试文件：
-
-~~~sh
-flutter test --no-pub --dart-define=DISABLE_REMOTE_IMAGES=true test/follow_state_test.dart test/library_workflow_test.dart test/library_features_widget_test.dart
-flutter test --no-pub --dart-define=DISABLE_REMOTE_IMAGES=true --dart-define=ALL_SOURCES=true test/follow_state_test.dart test/library_workflow_test.dart test/library_features_widget_test.dart
-~~~
-
-0.2.10 打包时移除了 `app_cover_metadata.go` 中遗留的 `parseHuangguoSortDetail` 重复定义，统一复用详情元数据解析实现；Go 格式整理和 `TestNativeCoverMetadataRejectsOtherDramaAndKeepsCurrentHost` 定向测试通过，测试只解析合成元数据，不请求图片。
-
-0.2.10 的红果鉴 / 真果鉴两份 ARM64 Release 构建和安装包检查已通过。每份 APK 的 17 个原生库均为 ARM64 ELF 并使用 ZIP DEFLATE 压缩，清单启用安装时解压；签名与 0.2.8 一致，包 CRC、ZIP 对齐、应用名称、包名、版本 `0.2.10`、ARM64 分包版本码 `2016` 和对应原生核心均正确。两份包及 `SHA256SUMS.txt` 已校验，构建与检查记录在 `build/packages-0210/`，对应 `release-default-arm64.log`、`release-all-sources-arm64.log`、`apk-default-verification.log` 和 `apk-all-sources-verification.log`。
-
-0.2.10 打包没有执行全量 Flutter / Go 回归、设备或模拟器测试，也没有请求站源图片。构建成功不代表新增功能已经完成平台验收。
-
-0.2.9 接入的播放器交互、分页 / 保存 / 本地用户恢复、红果推荐、资料模型、排序、全部站源和完整搜索等，仍按各待办行保留原有验收状态。0.2.10 / 0.2.11 的针对性测试不代表这些功能已完成集中验证；Android、Windows 原生行为与新增 TV 操作仍待平台验收。
-
-黄果 AI 的实际密钥连接与播放仍未恢复。0.2.13 已接入原清单中可独立实施的功能以及新增 P3-2 / P3-3；AI 待可通的入口后继续处理连接与播放问题，集中验证继续按用户安排执行。
-
-0.2.8 已通过 Dart 格式与静态检查，默认红果版和全站源版各通过 5 项站源界面定向检查。使用合成数据覆盖历史详情默认收起、两种主动检测展开、手动收起后跨请求返回 / 轮询 / 检测完成保持状态、完成后再次展开与收起，以及窄屏大字的失败诊断。记录在 `build/sources-028/`。
-
-0.2.7 已通过 Dart 格式与静态检查、相关 Go 定向检查（含竞态检测），另验证默认红果版的权限、分类和合成 HEIC。Flutter 定向检查默认版通过 14 项、全站源版通过 15 项；覆盖紧凑布局、大字体、展开搜索、黄果聚合 / 分类去重、独立分页与失败页重试、过期响应隔离、真实榜单名次、VIP 筛选及海报尺寸。合成 HEIC 还经过真实原生准备接口与开发机 FFmpeg 转成 JPEG，验证旋转后尺寸由 64×96 变为 96×64；此项不等同于 Android 原生插件实机验收。检查记录在 `build/sources-027/`。
-
-0.2.7 / 0.2.8 按当时要求没有运行整套回归、启动设备或模拟器，也未请求任何站源图片；各平台实际显示与播放效果仍需安装验证。0.2.6 的待办审查与边界问题证据保留在上文，以下保留历史版本验证结论。
-
-0.2.6 已完成红果鉴 / 真果鉴两份 ARM64 Release 构建。每份 APK 的 17 个原生库均采用 ZIP DEFLATE 压缩，最终清单已启用安装时解压；包 CRC、ZIP 对齐、应用名称、版本、签名和内置核心对比均通过。两份签名与 0.2.5 一致。全站源包由 67.4 MB 缩小到 30.1 MB，减少约 55.3%；第三方原生库解压后的内容与 0.2.5 一致。记录在 `build/sources-026/`。
-
-0.2.5 已通过 Dart 格式与静态检查、5 项定向 Go 检查（含竞态检测）和 1 项分类界面检查，覆盖分类分页 / 缓存隔离、旧 API 单剧 404、封面地址与合成解码、密钥 EOF 后备用 DNS 连接，以及分组切换和过期分类响应隔离。按用户要求不运行整套回归，记录在 `build/sources-025/`。
-
-0.2.5 线上文本检查取得黄果视频和旧版的实际分类；旧版独立更新成功，返回 100 部剧，全部封面 URL 已避免误用视频 CDN。仅核对地址元数据，封面解码只用合成图片，未请求站源图片。记录在 `build/sources-025/live-fixes.log`。
-
-黄果 AI 截图同剧《神瞳觉醒 第一季》的目录、21 集分集与 M3U8 均正常，但密钥请求仍在 TLS 握手时断开；换用备用公网地址及浏览器兼容连接后仍失败，没有证明媒体可播放。诊断记录在 `build/sources-025/key-probe.log`、`asset-probe.log` 和 `alias-probe.log`。此前 0.2.4 黄果视频“母女日常”的目录、分集、播放列表、密钥和媒体连接抽样通过，记录在 `build/sources-024/live-huangguo.log`；该结果不能代表黄果 AI 或 Android 实机播放。
-
-0.2.8 已生成两份 ARM64 Release 安装包，可覆盖升级。每份的 17 个原生库均使用 ZIP DEFLATE，清单启用安装时解压；签名与 0.2.7 一致，包 CRC、ZIP 对齐、应用名称、版本和内置核心对比均通过，记录在 `build/sources-028/apk-verification.log` 与 `apk-default-verification.log`：
-
-| 版本 | 安装包 | 大小 |
-| --- | --- | --- |
-| 红果鉴，仅红果 | `dist/android/hongguojian-0.2.8+14-arm64-v8a.apk` | 30.2 MB |
-| 真果鉴，全部站源 | `dist/android/zhenguojian-0.2.8+14-arm64-v8a.apk` | 30.2 MB |
-
-构建日志为 `build/sources-028/release-default-arm64.log` 和 `release-arm64.log`，包校验记录为同目录的 `apk-default-verification.log` 和 `apk-verification.log`。其他架构的构建开关和脚本保留，0.2.8 未生成其他架构安装包。
-
-按用户要求，由用户自行安装体验，不执行手机 / 电视实机测试或启动模拟器。Windows 完整包需 Windows / Actions；本机缺少 iPhoneOS SDK，iOS 尚未完成 Xcode 构建，也没有已签名 IPA。本轮不运行远程 Actions，不请求或处理站源图片。
-
-此前的合成 CENC 换封装、少数分集合并转码和 Emby 成品独立解码检查已通过。平台状态单独记录，不将待验收项目混入上面的功能移植顺序。
