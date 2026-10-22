@@ -121,12 +121,12 @@ class _PlayerMenuState extends State<PlayerMenu> {
     final size = MediaQuery.sizeOf(context);
     final landscape = size.width > size.height;
     final colors = Theme.of(context).colorScheme;
-    // 横屏（手机端即全屏）时菜单贴右收成覆盖抽屉：选集只占约 1/4 屏宽，
-    // 视频主体仍然可见；倍速/清晰度/设置需要更宽的阅读宽度，保持原宽度。
+    // 横屏选集适当加宽，让网格自然增加列数；小屏保证阅读宽度，
+    // 大屏最多占 520，避免抽屉遮住过多画面。其他菜单保持原宽度。
     final narrowDrawer =
         landscape && widget.section == PlayerMenuSection.episodes;
     final double menuWidth = narrowDrawer
-        ? math.min(320.0, math.max(200.0, size.width * .25))
+        ? math.min(520.0, math.max(320.0, size.width * .45))
         : landscape
         ? math.min(440.0, size.width * .6)
         : 600.0;
@@ -150,7 +150,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
       key: const ValueKey('player-menu'),
       alignment: landscape ? Alignment.centerRight : Alignment.bottomCenter,
       insetPadding: menuInsets,
-      // 覆盖 Dialog 默认的 minWidth 280，否则右侧抽屉收不到 1/4 屏宽。
+      // 窄窗口仍由可用空间约束，不能被 Dialog 默认的最小宽度撑出屏幕。
       constraints: const BoxConstraints(),
       backgroundColor: colors.surface,
       child: SizedBox(

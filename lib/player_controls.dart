@@ -63,6 +63,7 @@ class PlayerControls extends StatefulWidget {
     this.danmakuStatus = '',
     this.swipeEnabled = false,
     this.panelOpen = false,
+    this.transitioning = false,
     this.onSeek,
     this.onDanmaku,
     this.onRetryDanmaku,
@@ -95,6 +96,7 @@ class PlayerControls extends StatefulWidget {
   final String danmakuStatus;
   final bool swipeEnabled;
   final bool panelOpen;
+  final bool transitioning;
   final Future<void> Function(Duration)? onSeek;
   final Future<void> Function()? onDanmaku;
   final Future<void> Function()? onRetryDanmaku;
@@ -157,6 +159,10 @@ class _PlayerControlsState extends State<PlayerControls> {
         final wasPlaying = _lastPlaying;
         _lastPlaying = playing;
         if (!mounted || !widget.enabled) return;
+        if (widget.transitioning) {
+          _scheduleHide();
+          return;
+        }
         if (!playing) {
           _show();
         } else if (!wasPlaying) {
@@ -179,8 +185,20 @@ class _PlayerControlsState extends State<PlayerControls> {
     if (widget.enabled != oldWidget.enabled ||
         widget.panelOpen != oldWidget.panelOpen ||
         widget.fullscreen != oldWidget.fullscreen ||
+        widget.transitioning != oldWidget.transitioning ||
         widget.showOnPlaybackReady != oldWidget.showOnPlaybackReady) {
       _seekValue = null;
+      if (widget.transitioning) {
+        // 自动换集不因临时暂停、buffering 或 enabled 变化唤醒整套控制栏。
+        // 用户仍可以轻点画面主动显示控件。
+        if (!oldWidget.transitioning) _visible = false;
+        _suppressAutoPlaybackStart = true;
+        _scheduleHide();
+        return;
+      }
+      if (oldWidget.transitioning) {
+        _suppressAutoPlaybackStart = !widget.player.state.playing;
+      }
       if (widget.showOnPlaybackReady) {
         _suppressAutoPlaybackStart = false;
       } else if (widget.enabled && !oldWidget.enabled) {
@@ -306,6 +324,7 @@ class _PlayerControlsState extends State<PlayerControls> {
 
   bool get _chromeVisible {
     if (widget.interactions.boosting) return false;
+    if (widget.transitioning) return _visible || widget.panelOpen;
     final state = widget.player.state;
     return !widget.enabled ||
         _visible ||
@@ -1159,7 +1178,7 @@ class _PlayerControlsState extends State<PlayerControls> {
                 ? DecoratedBox(
                     key: const ValueKey('player-hold-speed-feedback'),
                     decoration: BoxDecoration(
-                      color: const Color(0x38D9D9D9),
+                      color: const Color(0x24D9D9D9),
                       borderRadius: BorderRadius.circular(25),
                     ),
                     child: Padding(

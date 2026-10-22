@@ -1,0 +1,8 @@
+origin	https://github.com/suncompass/guojianapp.git (fetch)
+origin	https://github.com/suncompass/guojianapp.git (push)
+upstream	https://github.com/huangge666/guojianapp.git (fetch)
+upstream	https://github.com/huangge666/guojianapp.git (push)
+branch.main.remote upstream
+branch.main.merge refs/heads/main
+branch.my-work.remote origin
+branch.my-work.merge refs/heads/my-work

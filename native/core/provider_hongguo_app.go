@@ -19,9 +19,6 @@ const hongguoAppBaseURL = "https://api5-normal-sinfonlineb.fqnovel.com"
 
 const hongguoAppUserAgent = "com.phoenix.read/73532 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"
 
-type hongguoPlaybackKey struct{}
-type hongguoSkipSignKey struct{}
-
 type hongguoCatalogCursor struct {
 	Offset        int       `json:"offset"`
 	SessionID     string    `json:"sessionId,omitempty"`
@@ -44,6 +41,9 @@ type hongguoAppClient struct {
 	catalogMu       sync.Mutex
 	baseURL         string
 	state           hongguoCatalogState
+	playerDeviceID  string
+	playerInstallID string
+	playerCID       string
 	details         map[string]hongguoDetailEntry
 	pending         map[string]*hongguoDetailCall
 	searches        map[string]hongguoSearchEntry
@@ -53,9 +53,6 @@ type hongguoAppClient struct {
 	searchSeasons   map[string]*hongguoSearchSeasonCursor
 	danmaku         map[string]hongguoDanmakuCacheEntry
 	danmakuPending  map[string]*hongguoDanmakuCall
-	playerDeviceID  string
-	playerInstallID string
-	playerCID       string
 }
 
 func (downloader *Downloader) hongguoClient() *hongguoAppClient {
@@ -63,12 +60,14 @@ func (downloader *Downloader) hongguoClient() *hongguoAppClient {
 		downloader.hongguo = &hongguoAppClient{
 			baseURL: hongguoAppBaseURL,
 			state:   hongguoCatalogState{Version: 1, DeviceID: newHongguoDeviceID(), InstallID: newHongguoDeviceID(), Feeds: map[string]hongguoCatalogCursor{}},
-			details: map[string]hongguoDetailEntry{}, pending: map[string]*hongguoDetailCall{},
+			// 播放设备标识与目录设备标识相互独立，且不写入目录缓存快照，避免固定设备被风控标记。
+			playerDeviceID:  newHongguoDeviceID(),
+			playerInstallID: newHongguoDeviceID(),
+			playerCID:       newHongguoDeviceID(),
+			details:         map[string]hongguoDetailEntry{}, pending: map[string]*hongguoDetailCall{},
 			searches: map[string]hongguoSearchEntry{}, searchPending: map[string]*hongguoSearchCall{},
 			searchSeasons: map[string]*hongguoSearchSeasonCursor{},
 			suggestions:   map[string]hongguoSuggestionEntry{}, suggestPending: map[string]*hongguoSuggestionCall{},
-			playerDeviceID: newHongguoDeviceID(), playerInstallID: newHongguoDeviceID(),
-			playerCID: fmt.Sprintf("%d", time.Now().UnixNano()),
 		}
 	})
 	return downloader.hongguo
@@ -137,16 +136,17 @@ func hongguoCatalogHasMore(state *hongguoCatalogState) bool {
 	return false
 }
 
+type hongguoPlaybackKey struct{}
+
 func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, path string, extra url.Values, payload any) (map[string]any, error) {
 	client := downloader.hongguoClient()
+	playback, _ := ctx.Value(hongguoPlaybackKey{}).(bool)
 	client.mu.Lock()
 	base, deviceID, installID := client.baseURL, client.state.DeviceID, client.state.InstallID
-	playerDeviceID, playerInstallID, playerCID := client.playerDeviceID, client.playerInstallID, client.playerCID
-	client.mu.Unlock()
-	playback, _ := ctx.Value(hongguoPlaybackKey{}).(bool)
 	if playback {
-		deviceID, installID = playerDeviceID, playerInstallID
+		deviceID, installID = client.playerDeviceID, client.playerInstallID
 	}
+	client.mu.Unlock()
 	query := url.Values{
 		"aid": {"8662"}, "app_name": {"novelread"}, "version_code": {"73532"}, "version_name": {"7.3.5.32"},
 		"manifest_version_code": {"73532"}, "update_version_code": {"73532"}, "channel": {"update_64"},
@@ -155,7 +155,7 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 		"resolution": {"1280*2772"}, "dpi": {"520"}, "ac": {"wifi"}, "device_id": {deviceID}, "iid": {installID},
 	}
 	if playback {
-		query.Set("cid", playerCID)
+		query.Set("cdid", client.playerCID)
 	}
 	for key, values := range extra {
 		query[key] = append([]string(nil), values...)
@@ -193,7 +193,6 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 		request.Header.Set("X-XS-From-Web", "0")
 		request.Header.Set("Sdk-Version", "2")
 		comment, _ := ctx.Value(hongguoCommentKey{}).(bool)
-		skipSign, _ := ctx.Value(hongguoSkipSignKey{}).(bool)
 		var commentNonce hongguoCommentNonce
 		if comment {
 			commentNonce, err = newHongguoCommentNonce()
@@ -203,22 +202,23 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 			request.Header.Set("Comment-Source", "601")
 			request.Header.Set("Server-Channel", "1000")
 		}
+		if playback {
+			request.Header.Set("X-SS-Req-Ticket", strconv.FormatInt(time.Now().UnixMilli(), 10))
+			request.Header.Set("X-TT-Request-Tag", "t=0;n=0")
+		}
 		if payload != nil {
 			request.Header.Set("Content-Type", "application/json; charset=utf-8")
 		}
 		response, err := downloader.doPreparedCatalogRequest(request, 20*time.Second, func(prepared *http.Request) {
 			now := time.Now()
 			query.Set("_rticket", strconv.FormatInt(now.UnixMilli(), 10))
-			query.Set("ts", strconv.FormatInt(now.Unix(), 10))
+			if playback {
+				query.Set("ts", strconv.FormatInt(now.Unix(), 10))
+			}
 			prepared.URL.RawQuery = query.Encode()
-			switch {
-			case playback:
-				prepareHongguoPlaybackRequest(prepared, now)
-			case comment:
+			if comment {
 				signHongguoCommentRequest(prepared, commentNonce, now)
-			case skipSign:
-				prepareHongguoUnsignedRequest(prepared, body, now)
-			default:
+			} else if !playback {
 				signHongguoRequest(prepared, body, now)
 			}
 		})

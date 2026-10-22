@@ -85,6 +85,44 @@ class ScriptedPlayer extends PlatformPlayer {
     playingController.add(false);
   }
 
+  /// 片尾暂停先到，completed 尚未更新，不能提前假定两者原子同步。
+  void emitEpisodeEndPause() {
+    state = state.copyWith(
+      position: state.duration,
+      completed: false,
+      playing: false,
+    );
+    playingController.add(false);
+  }
+
+  /// 补发完成事件，但保留滞后的状态快照，验证连播不依赖跨流更新顺序。
+  void emitEpisodeCompleted() {
+    completedController.add(true);
+  }
+
+  /// open 返回后解码器仍可能重置倍率并延迟报告暂停。
+  void emitDecoderPause() {
+    state = state.copyWith(playing: false, rate: 1);
+    playingController.add(false);
+  }
+
+  /// 报告真正开播，用于验证延迟到达的开播通知会重新应用长按倍率。
+  void emitPlaybackStarted() {
+    state = state.copyWith(playing: true);
+    playingController.add(true);
+  }
+
+  /// 补发滞后的暂停通知，但不改动当前状态快照。
+  void emitStalePause() {
+    playingController.add(false);
+  }
+
+  /// 报告缓冲进度，用于验证预加载不受缓冲事件影响。
+  void emitBuffer(Duration value) {
+    state = state.copyWith(buffer: value);
+    bufferController.add(value);
+  }
+
   void videoSize(int width, int height) {
     videoParamsController.add(
       VideoParams(w: width, h: height, dw: width, dh: height),
@@ -113,6 +151,35 @@ class ScriptedPlayer extends PlatformPlayer {
   Future<void> dispose() async {
     disposed = true;
     await super.dispose();
+  }
+}
+
+class PreloadRepository extends RouteRepository {
+  final preloads = <Completer<PlaybackPlan?>>[];
+  final releasedSessions = <String>[];
+  int preloadCancellations = 0;
+
+  @override
+  Future<PlaybackPlan?> preload(
+    Drama drama,
+    Episode episode, {
+    int quality = 0,
+    bool online = false,
+  }) {
+    final pending = Completer<PlaybackPlan?>();
+    preloads.add(pending);
+    return pending.future;
+  }
+
+  @override
+  Future<void> cancelPreload() async {
+    preloadCancellations++;
+  }
+
+  @override
+  Future<void> release(String session) async {
+    releasedSessions.add(session);
+    await super.release(session);
   }
 }
 

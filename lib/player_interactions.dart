@@ -19,9 +19,18 @@ class PlayerInteractions extends ChangeNotifier {
     required this.onFullscreen,
     required this.onEpisode,
     this.onSeek,
+    this.preserveHoldOnPause,
   }) {
     _playing = player.stream.playing.listen((playing) {
-      if (!playing) cancel();
+      if (_disposed) return;
+      if (playing) {
+        // open 返回不等于解码器已起播；实际开播时恢复当前倍率，松手则用常速。
+        unawaited(applySpeed());
+      } else if (!player.state.playing &&
+          !(preserveHoldOnPause?.call() ?? false)) {
+        // 旧媒体的暂停事件可能迟于新媒体开播到达，不能据此取消当前手势。
+        cancel();
+      }
     });
   }
 
@@ -33,6 +42,7 @@ class PlayerInteractions extends ChangeNotifier {
   final VoidCallback onFullscreen;
   final String Function(int direction) onEpisode;
   final Future<void> Function(Duration)? onSeek;
+  final bool Function()? preserveHoldOnPause;
   late final StreamSubscription<bool> _playing;
   Timer? _holdTimer;
   Timer? _hintTimer;
@@ -75,7 +85,8 @@ class PlayerInteractions extends ChangeNotifier {
     }
   }
 
-  Future<void> applySpeed() => _setRate(baseSpeed());
+  Future<void> applySpeed() =>
+      _setRate(_boosting ? _activeHoldSpeed : baseSpeed());
 
   Future<void> _setRate(double value) {
     _rates = _rates

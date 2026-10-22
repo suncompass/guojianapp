@@ -339,6 +339,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           !_panelOpen,
       baseSpeed: () => _speed,
       holdSpeed: () => _holdSpeed,
+      preserveHoldOnPause: () => _awaitingAutoAdvance,
       onTogglePlayback: _togglePlayback,
       onSeek: _seekTo,
       onFullscreen: _rotate,
@@ -389,6 +390,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               _player.state.position < duration - const Duration(seconds: 2)) {
             _queueRecovery();
           } else if (_autoAdvance &&
+              _playIntent &&
               _foreground &&
               !_panelOpen &&
               _index + 1 < widget.detail.episodes.length) {
@@ -834,8 +836,38 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  bool get _awaitingAutoAdvance {
+    if (_closed ||
+        !_foreground ||
+        !_playIntent ||
+        !_autoAdvance ||
+        _panelOpen ||
+        _error != null ||
+        widget.store.profileEpoch != _profileEpoch ||
+        widget.store.locked) {
+      return false;
+    }
+    // 已装媒体就是最后一集且已播完：没有下一集可等，暂停就是真正的结束。
+    if (_openedIndex >= 0 &&
+        _openedIndex + 1 >= widget.detail.episodes.length &&
+        _player.state.completed) {
+      return false;
+    }
+    // 完成标记、暂停通知与 open 返回没有固定先后；保留到新一集实际推进。
+    if (_transitionEpisode != null) return true;
+    final state = _player.state;
+    return !_loading &&
+        _openedIndex == _index &&
+        _index + 1 < widget.detail.episodes.length &&
+        (state.completed ||
+            (state.duration > Duration.zero &&
+                state.position >= state.duration - const Duration(seconds: 2)));
+  }
+
   void _syncPreload() {
     if (_closed) return;
+    // 片尾暂停及自动换集期间仍由本次切换接管预加载，不能清空在途请求。
+    if (_awaitingAutoAdvance && (_loading || !_player.state.playing)) return;
     if (!_preloadEnabled ||
         !_foreground ||
         widget.localOnly ||
@@ -856,10 +888,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
     final duration = state.duration.inMilliseconds;
     final position = state.position.inMilliseconds;
+    final rate = state.rate > 0 ? state.rate : 1.0;
+    final fullyBuffered = state.buffer.inMilliseconds >= duration;
+    // 按实际剩余观看时间调度，长按高倍速时也留足准备时间。
+    // 已缓存到片尾时，不应再被“不足 5 秒缓存”的门槛拦住。
     if (duration <= 0 ||
         position < 2000 ||
-        (position < duration ~/ 2 && duration - position > 45000) ||
-        state.buffer.inMilliseconds - position < 5000) {
+        (position < duration ~/ 2 && (duration - position) / rate > 45000) ||
+        (!fullyBuffered &&
+            (state.buffer.inMilliseconds - position) / rate < 5000)) {
       return;
     }
     _preloader.prepare(
@@ -905,7 +942,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     // 后台或暂停意图无需等待进度，不能让提示一直留在静止画面上。
     if (!_foreground ||
         !_playIntent ||
-        (!_buffering && _player.state.position > Duration.zero)) {
+        (!_buffering &&
+            _player.state.playing &&
+            !_player.state.completed &&
+            _player.state.position > Duration.zero)) {
       setState(() => _transitionEpisode = null);
     }
   }
@@ -1185,9 +1225,10 @@ class _PlayerScreenState extends State<PlayerScreen>
         handoffPlan == null &&
         _openedIndex == _index &&
         index == _index + 1 &&
-        _player.state.completed &&
         _plan != null;
-    _interactions.cancel();
+    // automaticAdvance 已由片尾事件及位置校验确认，不再依赖可能滞后的 completed 快照。
+    // 自动连播沿用尚未松开的手势；手动选集和恢复流程仍完整取消。
+    if (!continuous) _interactions.cancel();
     if (widget.handoff != null &&
         handoffPlan == null &&
         recoveryAction == null) {
@@ -1195,17 +1236,20 @@ class _PlayerScreenState extends State<PlayerScreen>
       widget.handoff?.fail('接收端已更换播放内容');
     }
     if (index != _index) _forceOnline = false;
-    final warmed =
-        handoffPlan ??
-        (recoveryAction == null && _preloadEnabled && !widget.localOnly
-            ? _preloader.take(
-                widget.detail.drama,
-                widget.detail.episodes[index],
-                quality: _requestedQuality,
-                online: _forceOnline,
-              )
-            : null);
-    _preloader.clear();
+    final warming =
+        handoffPlan == null &&
+            recoveryAction == null &&
+            _preloadEnabled &&
+            !widget.localOnly
+        ? _preloader.take(
+            widget.detail.drama,
+            widget.detail.episodes[index],
+            quality: _requestedQuality,
+            online: _forceOnline,
+            waitForPending: continuous,
+          )
+        : null;
+    if (warming == null) _preloader.clear();
     final ticket = ++_generation;
     if (!continuous) _enhancement.suspend();
     _seekSequence++;
@@ -1237,11 +1281,14 @@ class _PlayerScreenState extends State<PlayerScreen>
     LanController.current?.detachPlayback(_lanIdentity);
     _lanIdentity = Object();
     _attachLanPlayback();
+    PlaybackPlan? warmed;
     PlaybackPlan? prepared;
     PlaybackPlan? retained;
     PlaybackPlan? departing;
     bool installed = false;
     try {
+      warmed = handoffPlan ?? (warming == null ? null : await warming);
+      if (_closed || ticket != _generation) return;
       await _serialize(() async {
         if (_closed || ticket != _generation) {
           return;
@@ -1370,6 +1417,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       });
     } catch (error) {
       if (!_closed && mounted && ticket == _generation) {
+        _interactions.cancel();
         if (prepared != null && identical(_plan, prepared)) {
           _acceptErrors = true;
           _queueRecovery();
@@ -2101,6 +2149,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             enabled: !_loading && _error == null,
             enhancement: _enhancementForUi,
             panelOpen: _panelOpen,
+            transitioning: _transitionEpisode != null,
             fullscreen: _showFullscreen,
             horizontalInsets: horizontalInsets,
             showOnPlaybackReady: _showControlsOnPlaybackReady,

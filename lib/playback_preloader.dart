@@ -14,6 +14,7 @@ class PlaybackPreloader extends ChangeNotifier {
   PlaybackPlan? _ready;
   String? _identity;
   Timer? _delay;
+  Completer<void>? _pending;
   DateTime _expires = DateTime(2000), _retryAt = DateTime(2000);
   int _generation = 0;
   bool _closed = false, loading = false;
@@ -63,6 +64,7 @@ class PlaybackPreloader extends ChangeNotifier {
     final ticket = _generation;
     _delay = Timer(const Duration(milliseconds: 600), () async {
       _delay = null;
+      final pending = _pending = Completer<void>();
       loading = true;
       notifyListeners();
       try {
@@ -100,19 +102,32 @@ class PlaybackPreloader extends ChangeNotifier {
       } finally {
         if (!_closed && ticket == _generation) {
           loading = false;
+          _pending = null;
           notifyListeners();
         }
+        if (!pending.isCompleted) pending.complete();
       }
     });
     notifyListeners();
   }
 
-  PlaybackPlan? take(
+  Future<PlaybackPlan?> take(
     Drama drama,
     Episode episode, {
     int quality = 0,
     bool online = false,
-  }) {
+    bool waitForPending = false,
+  }) async {
+    final ticket = _generation;
+    if (waitForPending && _identity == _key(drama, episode, quality, online)) {
+      // 接用已发出的请求，而非到片尾再取消重做；超时后仍回退普通解析。
+      await _pending?.future.timeout(
+        const Duration(seconds: 3),
+        onTimeout: () {},
+      );
+    }
+    // 手动切集、退出或设置变更已接管时，不清除新一轮预加载。
+    if (_closed || ticket != _generation) return null;
     final result =
         _identity == _key(drama, episode, quality, online) &&
             _now().isBefore(_expires)
@@ -132,6 +147,9 @@ class PlaybackPreloader extends ChangeNotifier {
       unawaited(repository.cancelPreload().catchError((Object _) {}));
     }
     loading = false;
+    final pending = _pending;
+    _pending = null;
+    if (pending != null && !pending.isCompleted) pending.complete();
     if (changed && !_closed) notifyListeners();
   }
 

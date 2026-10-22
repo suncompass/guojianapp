@@ -16,33 +16,30 @@ func (downloader *Downloader) resolveHongguoAppMedia(ctx context.Context, videoI
 	if !hongguoNumericID.MatchString(videoID) {
 		return providerMedia{}, errors.New("红果视频 ID 无效")
 	}
-	ctx = context.WithValue(ctx, hongguoPlaybackKey{}, true)
+	// multi_video_model 免签通道要求 mixed_video_id_map 形式的请求体，video_platform 1024 是客户端上报的平台值。
 	payload := map[string]any{
-		"video_id": videoID, "content_type": 1,
-		"biz_param": map[string]any{"need_all_video_definition": true},
+		"biz_param": map[string]any{
+			"detail_page_version": 0, "device_level": 3, "disable_digg_stat": false,
+			"need_all_video_definition": true, "need_mp4_align": false,
+			"use_os_player": false, "use_server_dns": false, "video_platform": 1024,
+		},
+		"mixed_video_id_map": map[string]any{"1004": []string{videoID}},
 	}
-	result, err := downloader.hongguoAppRequest(ctx, http.MethodPost, "/novel/player/multi_video_model/v1/", nil, payload)
+	result, err := downloader.hongguoAppRequest(context.WithValue(ctx, hongguoPlaybackKey{}, true), http.MethodPost, "/novel/player/multi_video_model/v1/", nil, payload)
 	if err != nil {
 		return providerMedia{}, err
 	}
 	data := nestedMap(result, "data")
-	model, _ := data["video_model"].(map[string]any)
-	if encoded, ok := data["video_model"].(string); ok {
+	entry, _ := data[videoID].(map[string]any)
+	if entry == nil {
+		entry = data
+	}
+	model, _ := entry["video_model"].(map[string]any)
+	if encoded, ok := entry["video_model"].(string); ok {
 		decoder := json.NewDecoder(strings.NewReader(encoded))
 		decoder.UseNumber()
 		if err := decoder.Decode(&model); err != nil {
 			return providerMedia{}, errors.New("红果 App 播放信息格式异常")
-		}
-	}
-	if len(model) == 0 {
-		model = data
-	}
-	if _, ok := model["video_list"]; !ok {
-		if list, hasList := data["video_list"]; hasList {
-			model = map[string]any{"video_list": list}
-			if duration := mapString(data, "video_duration", "duration"); duration != "" {
-				model["video_duration"] = duration
-			}
 		}
 	}
 	return selectHongguoAppMedia(model)
@@ -70,8 +67,8 @@ func selectHongguoAppMedia(model map[string]any) (providerMedia, error) {
 	for _, row := range variants {
 		variant, _ := row.(map[string]any)
 		meta := nestedMap(variant, "video_meta")
-		codec := strings.ToLower(firstNonEmpty(mapString(meta, "codec_type"), mapString(variant, "codec_type")))
-		if codec == "bytevc2" || strings.Contains(strings.ToLower(firstNonEmpty(mapString(variant, "gear_des_key"), mapString(meta, "gear_des_key"))), "bytevc2") {
+		codec := strings.ToLower(firstNonEmpty(mapString(variant, "codec_type"), mapString(meta, "codec_type")))
+		if codec == "bytevc2" || strings.Contains(strings.ToLower(mapString(variant, "gear_des_key")), "bytevc2") {
 			continue
 		}
 		addresses := hongguoMediaAddresses(variant)
@@ -80,8 +77,10 @@ func selectHongguoAppMedia(model map[string]any) (providerMedia, error) {
 		}
 		media := providerMedia{Referer: "https://novel.snssdk.com/", Duration: time.Duration(duration * float64(time.Second))}
 		encryption := nestedMap(variant, "encrypt_info")
-		spade := firstNonEmpty(mapString(encryption, "spade_a"), mapString(meta, "spade_a"))
-		if spade != "" || encryption["encrypt"] == true || firstNonEmpty(mapString(encryption, "encryption_method"), mapString(meta, "encryption_method")) == "cenc-aes-ctr" {
+		spade := firstNonEmpty(mapString(variant, "spade_a"), mapString(encryption, "spade_a"))
+		method := firstNonEmpty(mapString(variant, "encryption_method"), mapString(encryption, "encryption_method"))
+		encrypt := firstNonEmpty(mapString(variant, "encrypt"), mapString(encryption, "encrypt"))
+		if spade != "" || encrypt == "true" || method == "cenc-aes-ctr" {
 			var err error
 			media.CENCKey, err = hongguoContentKey(spade)
 			if err != nil {
@@ -89,10 +88,11 @@ func selectHongguoAppMedia(model map[string]any) (providerMedia, error) {
 				continue
 			}
 		}
-		height, _ := strconv.Atoi(firstNonEmpty(mapString(meta, "vheight"), mapString(variant, "vheight")))
-		if definition, err := strconv.Atoi(hongguoQualityNumber.FindString(firstNonEmpty(mapString(meta, "definition"), mapString(variant, "definition")))); err == nil && definition > 0 {
-			height = definition
-		} else if width, _ := strconv.Atoi(firstNonEmpty(mapString(meta, "vwidth"), mapString(variant, "vwidth"))); width > 0 && (height == 0 || width < height) {
+		height, _ := strconv.Atoi(firstNonEmpty(mapString(variant, "vheight"), mapString(meta, "vheight")))
+		definition := firstNonEmpty(mapString(variant, "definition"), mapString(meta, "definition"))
+		if value, err := strconv.Atoi(hongguoQualityNumber.FindString(definition)); err == nil && value > 0 {
+			height = value
+		} else if width, _ := strconv.Atoi(mapString(meta, "vwidth")); width > 0 && (height == 0 || width < height) {
 			height = width
 		}
 		media.Quality = height

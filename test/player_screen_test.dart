@@ -105,7 +105,12 @@ class _TransitionPlayer extends ScriptedPlayer {
   @override
   Future<void> open(Playable playable, {bool play = true}) async {
     final gate = openGate;
-    if (gate != null) await gate.future;
+    if (gate != null) {
+      // 模拟新媒体打开期间清空完成标记、重置倍率并报告暂停。
+      state = state.copyWith(playing: false, completed: false, rate: 1);
+      playingController.add(false);
+      await gate.future;
+    }
     await super.open(playable, play: play);
   }
 }
@@ -549,6 +554,182 @@ void main() {
     }
   });
 
+  for (final keyboard in [false, true]) {
+    for (final releaseAt in ['resolving', 'opening', 'playing']) {
+      testWidgets('hold spans episodes: keyboard=$keyboard, $releaseAt', (
+        tester,
+      ) async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        try {
+          final repository = _TransitionRepository();
+          final player = _TransitionPlayer();
+          await mount(
+            tester,
+            repository,
+            player,
+            size: const Size(390, 844),
+            preferences: const PlaybackPreferences(
+              speed: 1.25,
+              holdSpeed: 2.75,
+              preload: false,
+            ),
+          );
+          final surface = find.byKey(const ValueKey('player-gesture-surface'));
+          final element = tester.element(surface);
+          final controls = tester.widget<PlayerControls>(
+            find.byType(PlayerControls),
+          );
+          final interactions = controls.interactions;
+          TestGesture? gesture;
+          if (keyboard) {
+            await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+          } else {
+            final rect = tester.getRect(surface);
+            gesture = await tester.startGesture(
+              rect.topLeft + Offset(rect.width * .5, rect.height * .3),
+            );
+          }
+          await tester.pump(const Duration(milliseconds: 400));
+          await interactions.pendingRates;
+          expect(player.state.rate, 2.75);
+          expect(find.text('2.75 倍速'), findsOneWidget);
+
+          Future<void> release() async {
+            if (keyboard) {
+              await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+            } else {
+              await gesture!.up();
+            }
+            await tester.pump();
+            await interactions.pendingRates;
+            expect(interactions.boosting, isFalse);
+            expect(player.state.rate, 1.25);
+            expect(find.text('2.75 倍速'), findsNothing);
+          }
+
+          // 两个流没有先后保证：先派发片尾暂停，再通知屏幕自动切集。
+          player.emitEpisodeEndPause();
+          await tester.pump();
+          expect(interactions.boosting, isTrue);
+          player.emitEpisodeCompleted();
+          await settleOperations(tester);
+          expect(repository.nextRequests, 1);
+          expect(interactions.boosting, isTrue);
+          expect(player.state.rate, 2.75);
+          expect(find.text('2.75 倍速'), findsOneWidget);
+          if (releaseAt == 'resolving') await release();
+
+          player.openGate = Completer<void>();
+          repository.nextReady.complete();
+          await settleOperations(tester);
+          expect(player.opened, hasLength(1));
+          expect(player.state.completed, isFalse);
+          expect(player.state.playing, isFalse);
+          expect(interactions.boosting, releaseAt != 'resolving');
+          if (releaseAt == 'opening') await release();
+
+          player.openGate!.complete();
+          await settleOperations(tester);
+          await interactions.pendingRates;
+          expect(player.opened, hasLength(2));
+          expect(tester.element(surface), same(element));
+          expect(interactions.boosting, releaseAt == 'playing');
+          expect(player.state.rate, releaseAt == 'playing' ? 2.75 : 1.25);
+          expect(player.state.playing, isTrue);
+          expect(player.state.position, Duration.zero);
+          // open 已返回，解码器仍可能重置倍率、延迟报告暂停和真正开播。
+          player.emitDecoderPause();
+          await tester.pump();
+          expect(interactions.boosting, releaseAt == 'playing');
+          player.emitPlaybackStarted();
+          await tester.pump();
+          await interactions.pendingRates;
+          expect(player.state.rate, releaseAt == 'playing' ? 2.75 : 1.25);
+          // 旧暂停通知晚于开播到达时，也不能清掉仍按住的手势。
+          player.emitStalePause();
+          await tester.pump();
+          expect(interactions.boosting, releaseAt == 'playing');
+          if (releaseAt == 'playing') {
+            expect(find.text('2.75 倍速'), findsOneWidget);
+            expect(
+              tester
+                  .widget<AnimatedOpacity>(
+                    find.byKey(const ValueKey('player-controls-chrome')),
+                  )
+                  .opacity,
+              0,
+            );
+            await release();
+          }
+          expect(player.state.position, Duration.zero);
+          expect(player.state.playing, isTrue);
+          expect(find.text('2.75 倍速'), findsNothing);
+          await unmount(tester, player);
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      });
+    }
+  }
+
+  for (final interruption in ['pause', 'manual', 'failure', 'last episode']) {
+    testWidgets('hold is cancelled by $interruption', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      try {
+        final repository = _TransitionRepository();
+        final player = _TransitionPlayer();
+        await mount(
+          tester,
+          repository,
+          player,
+          size: const Size(390, 844),
+          preferences: const PlaybackPreferences(
+            speed: 1.25,
+            holdSpeed: 2.75,
+            preload: false,
+          ),
+        );
+        final interactions = tester
+            .widget<PlayerControls>(find.byType(PlayerControls))
+            .interactions;
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pump(const Duration(milliseconds: 400));
+        await interactions.pendingRates;
+        expect(interactions.boosting, isTrue);
+        if (interruption == 'pause') {
+          await player.pause();
+        } else {
+          player.finishEpisode();
+          await settleOperations(tester);
+          expect(interactions.boosting, isTrue);
+          if (interruption == 'manual') {
+            await tester.tap(find.byKey(const ValueKey('play-episode-1')));
+            await settleOperations(tester);
+            repository.nextReady.complete();
+          } else if (interruption == 'failure') {
+            repository.nextReady.completeError(StateError('unavailable'));
+          } else {
+            repository.nextReady.complete();
+            await settleOperations(tester);
+            expect(interactions.boosting, isTrue);
+            expect(player.state.rate, 2.75);
+            player.finishEpisode();
+          }
+        }
+        await settleOperations(tester);
+        await interactions.pendingRates;
+        expect(interactions.boosting, isFalse);
+        expect(player.state.rate, 1.25);
+        expect(find.text('2.75 倍速'), findsNothing);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pump();
+        await unmount(tester, player);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+  }
+
   for (final initiallyVisible in [true, false]) {
     testWidgets('hold hides controls from visible=$initiallyVisible', (
       tester,
@@ -654,8 +835,8 @@ void main() {
       final decoration =
           tester.widget<DecoratedBox>(pill).decoration as BoxDecoration;
       expect(decoration.borderRadius, BorderRadius.circular(25));
-      expect(decoration.color, const Color(0x38D9D9D9));
-      expect(decoration.color?.a, closeTo(.22, .01));
+      expect(decoration.color, const Color(0x24D9D9D9));
+      expect(decoration.color?.a, closeTo(.14, .01));
       final text = tester.widget<Text>(feedback);
       expect(text.style?.fontSize, 12);
       expect(text.style?.fontWeight, FontWeight.w500);
@@ -931,12 +1112,12 @@ void main() {
       tester.view.physicalSize = const Size(844, 390);
       await settleOperations(tester);
       expect(find.byKey(const ValueKey('player-menu')), findsOneWidget);
-      // 横屏选集是贴右的窄抽屉：约 1/4 屏宽，且不越出屏幕。
+      // 横屏选集加宽为约 45% 屏宽，仍贴右且保留左侧播放画面。
       final drawer = tester.getRect(
         find.byKey(const ValueKey('player-menu-drawer')),
       );
-      expect(drawer.width, closeTo(211, 1));
-      expect(drawer.left, greaterThan(844 * .6));
+      expect(drawer.width, closeTo(379.8, 1));
+      expect(drawer.left, greaterThan(844 * .5));
       expect(drawer.right, lessThanOrEqualTo(844));
       expect(tester.takeException(), isNull);
       await unmount(tester, player);
@@ -1048,14 +1229,19 @@ void main() {
         reason: '横屏不再自动挂出选集侧栏',
       );
 
-      // 只有在点开选集时才出现，并且是约 1/4 屏宽的右侧覆盖抽屉。
+      // 只有点开选集时才覆盖在右侧，加宽抽屉不能压缩底层视频。
       await tester.tap(find.byKey(const ValueKey('player-episodes')));
       await settleOperations(tester);
       final drawer = tester.getRect(
         find.byKey(const ValueKey('player-menu-drawer')),
       );
-      expect(drawer.width, closeTo(211, 1), reason: '横屏选集收成约 1/4 屏宽');
-      expect(drawer.left, greaterThan(844 * .6), reason: '抽屉贴右');
+      expect(drawer.width, closeTo(379.8, 1), reason: '横屏选集宽度约 45%');
+      expect(drawer.left, greaterThan(844 * .5), reason: '抽屉贴右');
+      expect(
+        tester.getRect(find.byKey(const ValueKey('player-gesture-surface'))),
+        surface,
+        reason: '选集打开时底层视频仍占满全屏',
+      );
       expect(drawer.right, lessThanOrEqualTo(844), reason: '抽屉不越出屏幕');
       expect(tester.takeException(), isNull);
       await unmount(tester, player);
@@ -1165,6 +1351,60 @@ void main() {
     }
   });
 
+  testWidgets('boosted auto advance reuses an unfinished preload', (
+    tester,
+  ) async {
+    final repository = PreloadRepository();
+    final player = ScriptedPlayer();
+    await mount(
+      tester,
+      repository,
+      player,
+      preferences: const PlaybackPreferences(speed: 1.25, holdSpeed: 2.75),
+    );
+    final interactions = tester
+        .widget<PlayerControls>(find.byType(PlayerControls))
+        .interactions;
+    player.emitBuffer(player.state.duration);
+    await player.seek(const Duration(seconds: 10));
+    await tester.pump(const Duration(milliseconds: 700));
+    expect(repository.preloads, isEmpty);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump(const Duration(milliseconds: 400));
+    await interactions.pendingRates;
+    await tester.pump(const Duration(milliseconds: 610));
+    expect(repository.preloads, hasLength(1), reason: '倍速后按实际剩余时间提前准备');
+
+    player.emitEpisodeEndPause();
+    await tester.pump();
+    expect(repository.preloadCancellations, 0);
+    player.emitEpisodeCompleted();
+    await settleOperations(tester);
+    expect(repository.preloadCancellations, 0);
+    expect(repository.primaryCalls, 1, reason: '在途预加载不应被取消并重新解析');
+    expect(player.opened, hasLength(1));
+    expect(interactions.boosting, isTrue);
+
+    const plan = PlaybackPlan(
+      url: 'https://media.test/preloaded-2.mp4',
+      session: 'preloaded-2',
+    );
+    repository.active.add(plan.session);
+    repository.preloads.single.complete(plan);
+    await settleOperations(tester);
+    await interactions.pendingRates;
+    expect(player.opened, hasLength(2));
+    expect(player.opened.last.uri, plan.url);
+    expect(repository.primaryCalls, 1);
+    expect(player.state.rate, 2.75);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    await interactions.pendingRates;
+    expect(player.state.rate, 1.25);
+    await unmount(tester, player);
+    expect(repository.active, isEmpty);
+  });
+
   testWidgets('auto advance keeps media until replacement and defers cleanup', (
     tester,
   ) async {
@@ -1189,6 +1429,15 @@ void main() {
       expect(repository.active, contains(previous));
       expect(find.byKey(const ValueKey('player-loading-mask')), findsNothing);
       expect(find.text('正在准备播放'), findsNothing);
+      expect(
+        tester
+            .widget<AnimatedOpacity>(
+              find.byKey(const ValueKey('player-controls-chrome')),
+            )
+            .opacity,
+        0,
+        reason: '自动换集的临时暂停不能唤醒控制栏',
+      );
       expect(find.text('即将播放 · 第 2 集'), findsNothing);
       await tester.pump(const Duration(milliseconds: 260));
       await tester.pump(const Duration(milliseconds: 180));
@@ -1223,6 +1472,15 @@ void main() {
       await player.seek(const Duration(milliseconds: 250));
       await settleOperations(tester);
       expect(find.text('正在缓冲'), findsNothing);
+      expect(
+        tester
+            .widget<AnimatedOpacity>(
+              find.byKey(const ValueKey('player-controls-chrome')),
+            )
+            .opacity,
+        0,
+        reason: '等待新一集首段进度时，缓冲也不能唤醒控制栏',
+      );
       expect(
         tester
             .widget<PlayerEpisodeTransition>(

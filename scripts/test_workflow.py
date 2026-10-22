@@ -17,6 +17,21 @@ def job_block(name):
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_automatic_and_manual_triggers_are_both_enabled(self):
+        triggers = re.search(r'(?ms)^on:\n(.*?)(?=^\S|\Z)', workflow())
+        self.assertIsNotNone(triggers)
+        keys = [line.strip() for line in triggers.group(1).splitlines()
+                if re.fullmatch(r'  \S+:', line)]
+        self.assertEqual(keys, ['push:', 'pull_request:', 'workflow_dispatch:'])
+        self.assertIn('branches: [main, master]', triggers.group(1))
+        self.assertIn("tags: ['*']", triggers.group(1))
+        for unsupported in ['schedule:', 'workflow_run:', 'repository_dispatch:']:
+            self.assertNotIn(unsupported, triggers.group(1))
+
+    def test_artifacts_follow_repository_retention(self):
+        # 不用流水线自带的短保留期提前清掉旧产物。
+        self.assertNotIn('retention-days:', workflow())
+
     def test_checks_are_independent_jobs(self):
         text = workflow()
         for name in ['scripts', 'dart', 'go']:
@@ -41,6 +56,16 @@ class WorkflowTests(unittest.TestCase):
             self.assertNotIn('needs.' + name, release)
         self.assertIn("needs.android.result == 'success'", release)
         self.assertIn('!cancelled()', release)
+
+    def test_release_concurrency_uses_the_publish_tag(self):
+        release = job_block('release')
+        self.assertIn(
+            "group: release-${{ github.repository }}-${{ github.ref_type == 'tag' "
+            "&& github.ref_name || format('build-{0}-{1}', github.run_id, github.run_attempt) }}",
+            release,
+        )
+        self.assertIn('cancel-in-progress: false', release)
+        self.assertNotIn("|| 'latest'", release)
 
     def test_single_edition_builds_on_both_platforms(self):
         text = workflow()

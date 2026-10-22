@@ -36,7 +36,7 @@ func TestHongguoPlaybackRequestIsUnsignedWithIsolatedDevice(t *testing.T) {
 		t.Error("playback request must carry X-SS-Req-Ticket")
 	}
 	query := seen.URL.Query()
-	for _, name := range []string{"ts", "_rticket", "device_id", "iid", "cid"} {
+	for _, name := range []string{"ts", "_rticket", "device_id", "iid", "cdid"} {
 		if query.Get(name) == "" {
 			t.Errorf("playback request missing query parameter: %s", name)
 		}
@@ -74,8 +74,8 @@ func TestHongguoCatalogRequestKeepsSignature(t *testing.T) {
 			t.Errorf("catalog request missing signature header: %s", name)
 		}
 	}
-	if seen.URL.Query().Get("cid") != "" {
-		t.Error("catalog request must not carry the playback cid")
+	if seen.URL.Query().Get("cdid") != "" {
+		t.Error("catalog request must not carry the playback cdid")
 	}
 }
 

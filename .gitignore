@@ -41,6 +41,3 @@ ios/DuanjuCore/*.xcframework/
 
 # CodeGraph 本地索引
 .codegraph/
-
-# WorkBuddy 本地记忆
-.workbuddy/

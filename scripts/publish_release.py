@@ -1,4 +1,4 @@
-"""Publish immutable CI assets before replacing a release's previous downloads."""
+"""Publish verified workflow assets without deleting previous downloads."""
 
 import datetime
 import hashlib
@@ -95,24 +95,17 @@ class GitHubRelease:
                 return None
             raise
 
-    def draft(self, tag):
-        # 按 tag 查询只返回已发布的 Release，草稿不在其中；列表接口才能看到草稿。
-        pages = json.loads(self.command(
-            'api', '--paginate', '--slurp', f'{self.base}?per_page=100',
-        ))
-        for page in pages:
-            for release in page:
-                if release.get('draft') and release.get('tag_name') == tag:
-                    return release
-        return None
-
     def create_draft(self, tag, title, notes, commit):
-        self.command('release', 'create', tag, '--repo', self.repository,
-                     '--draft', '--title', title, '--notes', notes, '--target', commit)
-        release = self.draft(tag)
-        if release is None:
-            raise RuntimeError('New draft release cannot be read')
-        return release
+        # 直接使用创建响应里的 release 对象：按 tag 读回对草稿 404，列表接口
+        # 对新建草稿又有延迟，回读在 CI 里读不到刚创建的草稿。
+        return json.loads(self.command(
+            'api', '--method', 'POST', self.base,
+            '-f', f'tag_name={tag}',
+            '-f', f'target_commitish={commit}',
+            '-F', 'draft=true',
+            '-f', f'name={title}',
+            '-f', f'body={notes}',
+        ))
 
     def assets(self, release_id):
         pages = json.loads(self.command(
@@ -120,21 +113,25 @@ class GitHubRelease:
         ))
         return [asset for page in pages for asset in page]
 
-    def upload(self, tag, path):
-        # Never use --clobber: it deletes the existing asset before uploading.
-        self.command('release', 'upload', tag, str(path), '--repo', self.repository)
+    def upload(self, release_id, path):
+        # 草稿按 id 上传附件，避免按 tag 解析草稿时再次依赖列表接口；
+        # 绝不使用 --clobber 之类会先删除已有附件的方式。
+        self.command(
+            'api', '--method', 'POST',
+            f'https://uploads.github.com/repos/{self.repository}'
+            f'/releases/{release_id}/assets?name={quote(path.name, safe="")}',
+            '-H', 'Content-Type: application/octet-stream',
+            '--input', str(path),
+        )
 
-    def promote(self, tag, title, notes, commit):
-        self.command('release', 'edit', tag, '--repo', self.repository,
-                     '--title', title, '--notes', notes, '--target', commit, '--draft=false')
-        if tag == 'latest':
-            # --target alone does not move a tag that already exists.
-            self.command('api', '--method', 'PATCH',
-                         f'repos/{self.repository}/git/refs/tags/latest',
-                         '-f', f'sha={commit}', '-F', 'force=true')
-
-    def remove_asset(self, asset_id):
-        self.command('api', '--method', 'DELETE', f'{self.base}/assets/{asset_id}')
+    def promote(self, release_id, title, notes):
+        # 只公开发布本次创建/命中的 Release；不移动也不重建任何已有 tag。
+        self.command(
+            'api', '--method', 'PATCH', f'{self.base}/{release_id}',
+            '-F', 'draft=false',
+            '-f', f'name={title}',
+            '-f', f'body={notes}',
+        )
 
 
 def matches_asset(remote, path):
@@ -149,37 +146,37 @@ def publish_assets(client, tag, title, notes, commit, assets):
     release = client.release(tag)
     if release is None:
         release = client.create_draft(tag, title, notes, commit)
-    previous = client.assets(release['id'])
-    existing = {asset['name']: asset for asset in previous}
+    existing = {asset['name']: asset for asset in client.assets(release['id'])}
     for name, path in assets.items():
         if name in existing:
             if not matches_asset(existing[name], path):
                 raise RuntimeError(f'Conflicting release asset, preserved without overwrite: {name}')
         else:
-            client.upload(tag, path)
+            client.upload(release['id'], path)
     uploaded = {asset['name']: asset for asset in client.assets(release['id'])}
     for name, path in assets.items():
         if name not in uploaded or not matches_asset(uploaded[name], path):
             # Missing SHA-256 is a failed verification, not permission to remove old packages.
             raise RuntimeError(f'Uploaded release asset could not be verified: {name}')
-    client.promote(tag, title, notes, commit)
-    # Only after every new file is confirmed do we remove the old generation.
-    for asset in previous:
-        if asset['name'] not in assets:
-            client.remove_asset(asset['id'])
+    # 只追加本次附件；历史安装包、清单和校验文件继续保留原下载地址。
+    client.promote(release['id'], title, notes)
 
 
 def main():
     environment = os.environ
     commit = environment['GITHUB_SHA']
     ref = environment['GITHUB_REF']
-    tag = environment['GITHUB_REF_NAME'] if ref.startswith('refs/tags/') else 'latest'
-    title = tag if tag != 'latest' else f'最新构建 {commit[:7]}'
+    run_id = environment['GITHUB_RUN_ID']
+    attempt = environment['GITHUB_RUN_ATTEMPT']
+    explicit_tag = ref.startswith('refs/tags/')
+    # run_id 区分构建批次，attempt 区分重跑；显式 tag 仍使用用户指定的版本。
+    tag = environment['GITHUB_REF_NAME'] if explicit_tag else f'build-{run_id}-{attempt}'
+    title = tag if explicit_tag else f'构建 {tag} · {commit[:7]}'
     assets = prepare_assets(
-        Path('artifacts'), Path('release'), commit, environment['GITHUB_RUN_ID'],
-        environment['GITHUB_RUN_ATTEMPT'], environment.get('IOS_RESULT', 'unknown'),
+        Path('artifacts'), Path('release'), commit, run_id, attempt,
+        environment.get('IOS_RESULT', 'unknown'),
     )
-    notes = (f'由 CI 自动发布 · 提交 {commit}\n\n'
+    notes = (f'由自动或手动运行的工作流发布 · 提交 {commit}\n\n'
              f'构建记录：{environment["GITHUB_SERVER_URL"]}/{environment["GITHUB_REPOSITORY"]}'
              f'/actions/runs/{environment["GITHUB_RUN_ID"]}\n\n'
              '校验与设备验收独立于出包；请参阅 workflow 状态。附件包含构建清单及 SHA-256。')
