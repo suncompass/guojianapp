@@ -19,6 +19,8 @@ const hongguoAppBaseURL = "https://api5-normal-sinfonlineb.fqnovel.com"
 
 const hongguoAppUserAgent = "com.phoenix.read/73532 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"
 
+type hongguoPlaybackKey struct{}
+
 type hongguoCatalogCursor struct {
 	Offset        int       `json:"offset"`
 	SessionID     string    `json:"sessionId,omitempty"`
@@ -37,19 +39,22 @@ type hongguoCatalogState struct {
 }
 
 type hongguoAppClient struct {
-	mu             sync.Mutex
-	catalogMu      sync.Mutex
-	baseURL        string
-	state          hongguoCatalogState
-	details        map[string]hongguoDetailEntry
-	pending        map[string]*hongguoDetailCall
-	searches       map[string]hongguoSearchEntry
-	searchPending  map[string]*hongguoSearchCall
-	suggestions    map[string]hongguoSuggestionEntry
-	suggestPending map[string]*hongguoSuggestionCall
-	searchSeasons  map[string]*hongguoSearchSeasonCursor
-	danmaku        map[string]hongguoDanmakuCacheEntry
-	danmakuPending map[string]*hongguoDanmakuCall
+	mu              sync.Mutex
+	catalogMu       sync.Mutex
+	baseURL         string
+	state           hongguoCatalogState
+	details         map[string]hongguoDetailEntry
+	pending         map[string]*hongguoDetailCall
+	searches        map[string]hongguoSearchEntry
+	searchPending   map[string]*hongguoSearchCall
+	suggestions     map[string]hongguoSuggestionEntry
+	suggestPending  map[string]*hongguoSuggestionCall
+	searchSeasons   map[string]*hongguoSearchSeasonCursor
+	danmaku         map[string]hongguoDanmakuCacheEntry
+	danmakuPending  map[string]*hongguoDanmakuCall
+	playerDeviceID  string
+	playerInstallID string
+	playerCID       string
 }
 
 func (downloader *Downloader) hongguoClient() *hongguoAppClient {
@@ -61,6 +66,8 @@ func (downloader *Downloader) hongguoClient() *hongguoAppClient {
 			searches: map[string]hongguoSearchEntry{}, searchPending: map[string]*hongguoSearchCall{},
 			searchSeasons: map[string]*hongguoSearchSeasonCursor{},
 			suggestions:   map[string]hongguoSuggestionEntry{}, suggestPending: map[string]*hongguoSuggestionCall{},
+			playerDeviceID: newHongguoDeviceID(), playerInstallID: newHongguoDeviceID(),
+			playerCID: fmt.Sprintf("%d", time.Now().UnixNano()),
 		}
 	})
 	return downloader.hongguo
@@ -133,13 +140,22 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 	client := downloader.hongguoClient()
 	client.mu.Lock()
 	base, deviceID, installID := client.baseURL, client.state.DeviceID, client.state.InstallID
+	playerDeviceID, playerInstallID, playerCID := client.playerDeviceID, client.playerInstallID, client.playerCID
 	client.mu.Unlock()
+	playback, _ := ctx.Value(hongguoPlaybackKey{}).(bool)
+	if playback {
+		deviceID, installID = playerDeviceID, playerInstallID
+	}
 	query := url.Values{
 		"aid": {"8662"}, "app_name": {"novelread"}, "version_code": {"73532"}, "version_name": {"7.3.5.32"},
 		"manifest_version_code": {"73532"}, "update_version_code": {"73532"}, "channel": {"update_64"},
 		"device_platform": {"android"}, "os": {"android"}, "ssmix": {"a"}, "device_type": {"25053RT47C"},
 		"device_brand": {"Redmi"}, "language": {"zh"}, "os_api": {"36"}, "os_version": {"16"},
 		"resolution": {"1280*2772"}, "dpi": {"520"}, "ac": {"wifi"}, "device_id": {deviceID}, "iid": {installID},
+	}
+	if playback {
+		query.Set("cid", playerCID)
+		query.Set("device_platform", "android")
 	}
 	for key, values := range extra {
 		query[key] = append([]string(nil), values...)
@@ -192,10 +208,14 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 		response, err := downloader.doPreparedCatalogRequest(request, 20*time.Second, func(prepared *http.Request) {
 			now := time.Now()
 			query.Set("_rticket", strconv.FormatInt(now.UnixMilli(), 10))
+			query.Set("ts", strconv.FormatInt(now.Unix(), 10))
 			prepared.URL.RawQuery = query.Encode()
-			if comment {
+			switch {
+			case playback:
+				prepareHongguoPlaybackRequest(prepared, now)
+			case comment:
 				signHongguoCommentRequest(prepared, commentNonce, now)
-			} else {
+			default:
 				signHongguoPlayerRequest(prepared, body, now, installID)
 			}
 		})
