@@ -16,12 +16,12 @@ func (downloader *Downloader) resolveHongguoAppMedia(ctx context.Context, videoI
 	if !hongguoNumericID.MatchString(videoID) {
 		return providerMedia{}, errors.New("红果视频 ID 无效")
 	}
-	ctx = context.WithValue(ctx, hongguoSkipSignKey{}, true)
+	ctx = context.WithValue(ctx, hongguoPlaybackKey{}, true)
 	payload := map[string]any{
 		"video_id": videoID, "content_type": 1,
 		"biz_param": map[string]any{"need_all_video_definition": true},
 	}
-	result, err := downloader.hongguoAppRequest(ctx, http.MethodPost, "/novel/player/video_model/v1/", nil, payload)
+	result, err := downloader.hongguoAppRequest(ctx, http.MethodPost, "/novel/player/multi_video_model/v1/", nil, payload)
 	if err != nil {
 		return providerMedia{}, err
 	}
@@ -32,6 +32,17 @@ func (downloader *Downloader) resolveHongguoAppMedia(ctx context.Context, videoI
 		decoder.UseNumber()
 		if err := decoder.Decode(&model); err != nil {
 			return providerMedia{}, errors.New("红果 App 播放信息格式异常")
+		}
+	}
+	if len(model) == 0 {
+		model = data
+	}
+	if _, ok := model["video_list"]; !ok {
+		if list, hasList := data["video_list"]; hasList {
+			model = map[string]any{"video_list": list}
+			if duration := mapString(data, "video_duration", "duration"); duration != "" {
+				model["video_duration"] = duration
+			}
 		}
 	}
 	return selectHongguoAppMedia(model)

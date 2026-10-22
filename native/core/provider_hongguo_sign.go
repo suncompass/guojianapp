@@ -57,3 +57,15 @@ func prepareHongguoUnsignedRequest(request *http.Request, body []byte, now time.
 	}
 	request.Header.Set("X-SS-Req-Ticket", strconv.FormatInt(now.UnixMilli(), 10))
 }
+
+// 播放请求只保留公共头，Query 侧另带 ts 与 _rticket：
+// 一旦出现 X-Gorgon、X-Khronos 或 X-SS-STUB 会被判为无效签名。
+func prepareHongguoPlaybackRequest(request *http.Request, now time.Time) {
+	request.Header.Del("X-Gorgon")
+	request.Header.Del("X-Khronos")
+	request.Header.Del("X-Argus")
+	request.Header.Del("X-Ladon")
+	request.Header.Del("X-SS-STUB")
+	request.Header.Set("X-SS-Req-Ticket", strconv.FormatInt(now.UnixMilli(), 10))
+	request.Header.Set("X-TT-Request-Tag", "t=0;n=0")
+}
